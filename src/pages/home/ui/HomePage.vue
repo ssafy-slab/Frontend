@@ -20,12 +20,12 @@ function getLinkedPlace(index: number): Place {
   <section class="app-container py-6 md:py-9">
     <div class="grid items-center gap-7 lg:grid-cols-[1fr_0.9fr]">
       <div>
-        <h1 class="text-3xl font-black leading-tight tracking-[-0.02em] text-slate-950 sm:text-4xl lg:text-5xl">
+        <h1 class="text-3xl font-black leading-tight text-slate-950 sm:text-4xl lg:text-5xl">
           이번 주말,<br />
           어디로 떠나볼까요?
         </h1>
         <p class="mt-4 max-w-xl text-base leading-7 text-slate-500 sm:text-lg">
-          AI가 취향에 맞는 일정을 짜주고, 친구들과의 대화로 쉽게 일정을 조율해 보세요.
+          AI가 취향에 맞는 일정을 짜주고, 친구들과 대화로 쉽게 일정을 조율해보세요.
         </p>
 
         <div class="mt-6 grid gap-3 sm:max-w-lg">
@@ -106,48 +106,39 @@ function getLinkedPlace(index: number): Place {
 
     <Transition name="modal-fade">
       <div v-if="showScheduleModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
-      <section class="modal-panel w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
-        <div class="mb-4 flex items-center justify-between">
-          <h2 class="flex items-center gap-2 text-xl font-black text-slate-950">
-            <Plane :size="24" class="text-brand-500" />
-            새 일정 만들기
-          </h2>
-          <button class="text-slate-500" aria-label="닫기" @click="showScheduleModal = false">
-            <X :size="24" />
+        <section class="modal-panel w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl sm:max-w-md">
+          <div class="mb-4 flex items-center justify-between">
+            <h2 class="flex items-center gap-2 text-xl font-black text-slate-950">
+              <Plane :size="24" class="text-brand-500" />
+              새 일정 만들기
+            </h2>
+            <button class="text-slate-500" aria-label="닫기" @click="showScheduleModal = false">
+              <X :size="24" />
+            </button>
+          </div>
+
+          <div class="space-y-3.5">
+            <label class="block">
+              <span class="mb-1.5 block text-xs font-black text-slate-950">여행 제목</span>
+              <input class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="예: 부산 힐링 여행" />
+            </label>
+            <label class="block">
+              <span class="mb-1.5 block text-xs font-black text-slate-950">목적지</span>
+              <input class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="어디로 떠나시나요?" />
+            </label>
+            <div>
+              <span class="mb-1.5 block text-xs font-black text-slate-950">여행 기간</span>
+              <div class="grid grid-cols-1 gap-2">
+                <input class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="시작일 (연도-월-일)" />
+                <input class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="종료일 (연도-월-일)" />
+              </div>
+            </div>
+          </div>
+
+          <button class="btn-primary mt-5 h-10 w-full rounded-lg text-sm" @click="showScheduleModal = false">
+            일정 상세 만들기
           </button>
-        </div>
-
-        <div class="space-y-3.5">
-          <label class="block">
-            <span class="mb-1.5 block text-xs font-black text-slate-950">여행 제목</span>
-            <input class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="예: 부산 힐링 여행" />
-          </label>
-          <label class="block">
-            <span class="mb-1.5 block text-xs font-black text-slate-950">목적지</span>
-            <input class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="어디로 떠나시나요?" />
-          </label>
-          <div>
-            <span class="mb-1.5 block text-xs font-black text-slate-950">여행 기간</span>
-            <div class="grid gap-2 sm:grid-cols-[1fr_18px_1fr] sm:items-center">
-              <input class="brand-input h-10 rounded-lg px-3 text-sm outline-none" placeholder="연도-월-일" />
-              <span class="hidden text-center text-xs font-bold text-slate-500 sm:block">~</span>
-              <input class="brand-input h-10 rounded-lg px-3 text-sm outline-none" placeholder="연도-월-일" />
-            </div>
-          </div>
-          <div>
-            <span class="mb-1.5 block text-xs font-black text-slate-950">여행 유형</span>
-            <div class="flex flex-wrap gap-1.5">
-              <button class="rounded-full border border-brand-500 bg-brand-50 px-3 py-1.5 text-xs font-black text-brand-500">나홀로 여행</button>
-              <button class="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700">친구와 함께</button>
-              <button class="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700">가족 여행</button>
-            </div>
-          </div>
-        </div>
-
-        <button class="btn-primary mt-5 h-10 w-full rounded-lg text-sm" @click="showScheduleModal = false">
-          일정 상세 만들기
-        </button>
-      </section>
+        </section>
       </div>
     </Transition>
   </section>
