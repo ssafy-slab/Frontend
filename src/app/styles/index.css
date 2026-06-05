@@ -1,0 +1,192 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Pretendard", "Inter", "Noto Sans KR", system-ui, sans-serif;
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-500: #4f46e5;
+  --color-brand-600: #4338ca;
+  --color-brand-700: #3730a3;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+  background: #f8fafc;
+  color: #334155;
+  letter-spacing: 0;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.app-container {
+  width: min(100% - 32px, 1120px);
+  margin-inline: auto;
+}
+
+@media (min-width: 768px) {
+  .app-container {
+    width: min(100% - 48px, 1120px);
+  }
+}
+
+@media (min-width: 1440px) {
+  .app-container {
+    width: min(100% - 180px, 1240px);
+  }
+}
+
+@media (min-width: 1920px) {
+  .app-container {
+    width: min(100% - 260px, 1360px);
+  }
+}
+
+@media (min-width: 2400px) {
+  .app-container {
+    width: min(100% - 360px, 1520px);
+  }
+}
+
+.page-shell {
+  min-height: calc(100vh - 64px);
+}
+
+.brand-card {
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
+}
+
+.brand-input {
+  border: 1px solid #dbe4ef;
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.brand-input::placeholder {
+  color: #7b8794;
+}
+
+.btn-primary {
+  background: #4f46e5;
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.btn-primary:hover {
+  background: #4338ca;
+}
+
+.page-fade-enter-active,
+.page-fade-leave-active {
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.page-fade-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.page-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.toast-pop-enter-active,
+.toast-pop-leave-active {
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.toast-pop-enter-from,
+.toast-pop-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 8px);
+}
+
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 180ms ease;
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
+}
+
+.modal-fade-enter-active .modal-panel,
+.modal-fade-leave-active .modal-panel {
+  transition:
+    opacity 200ms ease,
+    transform 200ms ease;
+}
+
+.modal-fade-enter-from .modal-panel,
+.modal-fade-leave-to .modal-panel {
+  opacity: 0;
+  transform: translateY(14px) scale(0.97);
+}
+
+.like-button.liked svg {
+  animation: like-pop 260ms ease-out;
+}
+
+.message-pop {
+  animation: message-rise 180ms ease-out;
+}
+
+.vote-option {
+  transform-origin: center;
+}
+
+.vote-option:active,
+.check-row:active {
+  transform: scale(0.985);
+}
+
+.schedule-drag-card:active {
+  cursor: grabbing;
+}
+
+@keyframes like-pop {
+  0% {
+    transform: scale(0.78);
+  }
+  58% {
+    transform: scale(1.26);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes message-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
