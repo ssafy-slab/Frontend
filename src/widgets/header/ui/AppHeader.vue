@@ -31,7 +31,7 @@ function isActive(view: string, activeView: string) {
 </script>
 
 <template>
-  <header class="sticky top-0 z-50 border-b border-slate-200 bg-white shadow-sm">
+  <header class="sticky top-0 z-50 w-full border-b border-slate-200 bg-white shadow-sm">
     <div class="app-container grid h-16 grid-cols-[auto_1fr_auto] items-center gap-4">
       <button class="text-left" @click="emit('change', 'home')">
         <BrandLogo compact />
@@ -55,7 +55,9 @@ function isActive(view: string, activeView: string) {
 
       <div class="flex items-center justify-end gap-2">
         <template v-if="currentUser">
-          <span class="hidden max-w-28 truncate text-xs font-extrabold text-slate-700 sm:block">{{ currentUser.nickname }}님</span>
+          <span class="max-w-28 truncate text-xs font-black text-slate-800 underline-offset-4 hover:text-brand-500 hover:underline" role="button" tabindex="0" @click="emit('change', 'profile')" @keyup.enter="emit('change', 'profile')">
+            {{ currentUser.nickname }}
+          </span>
           <button class="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-800 hover:bg-slate-200" @click="emit('logout')">
             로그아웃
           </button>

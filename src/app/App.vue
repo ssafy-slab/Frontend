@@ -7,8 +7,10 @@ import CommunityPage from '@/pages/community/ui/CommunityPage.vue'
 import ExplorePage from '@/pages/explore/ui/ExplorePage.vue'
 import HomePage from '@/pages/home/ui/HomePage.vue'
 import PlaceDetailPage from '@/pages/place/ui/PlaceDetailPage.vue'
+import ProfilePage from '@/pages/profile/ui/ProfilePage.vue'
 import ScheduleDetailPage from '@/pages/schedule/ui/ScheduleDetailPage.vue'
 import SchedulePage from '@/pages/schedule/ui/SchedulePage.vue'
+import AppFooter from '@/widgets/footer/ui/AppFooter.vue'
 import AppHeader from '@/widgets/header/ui/AppHeader.vue'
 import type { CommunityPost, Place, Trip } from '@/entities/travel/model/travel'
 import { places, posts, trips } from '@/entities/travel/model/travel'
@@ -22,6 +24,7 @@ type ViewName =
   | 'community'
   | 'community-write'
   | 'community-detail'
+  | 'profile'
   | 'login'
   | 'signup'
 
@@ -100,9 +103,12 @@ function handleLogout() {
       <CommunityPage v-else-if="activeView === 'community'" key="community" :posts="communityPosts" @change="changeView" />
       <CommunityEditorPage v-else-if="activeView === 'community-write'" key="community-write" @change="changeView" @create-post="addPost" />
       <CommunityDetailPage v-else-if="activeView === 'community-detail'" key="community-detail" @change="changeView" />
+      <ProfilePage v-else-if="activeView === 'profile'" key="profile" :current-user="currentUser" @change="changeView" />
       <AuthPage v-else key="auth" :mode="authMode" @change="changeView" @authenticated="handleLogin" />
     </Transition>
   </main>
+
+  <AppFooter />
 
   <Transition name="toast-pop">
     <div v-if="toastMessage" class="fixed bottom-6 left-1/2 z-[90] -translate-x-1/2 rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl">

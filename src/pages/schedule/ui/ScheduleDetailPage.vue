@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
-import { Bot, CalendarCheck, GripVertical, Link, MapPin, MoreVertical, Send, SquareCheck } from 'lucide-vue-next'
+import { computed, nextTick, reactive, ref } from 'vue'
+import { Bot, CalendarCheck, GripVertical, Link, MapPin, MoreVertical, Send, SquareCheck, UserCog, X } from 'lucide-vue-next'
 import type { Trip } from '@/entities/travel/model/travel'
 
 const props = defineProps<{
@@ -26,9 +26,29 @@ type Message = {
   mine?: boolean
 }
 
+type Member = {
+  id: number
+  name: string
+  email: string
+  role: string
+  owner?: boolean
+}
+
 const draggedId = ref<number | null>(null)
 const messageText = ref('')
 const voted = ref('숙성도 노형본점')
+const showInviteModal = ref(false)
+const showMemberModal = ref(false)
+const members = ref<Member[]>([
+  { id: 1, name: '나', email: 'me@example.com', role: '소유자', owner: true },
+  { id: 2, name: '지수', email: 'jisu@example.com', role: '편집 가능' },
+  { id: 3, name: '민수', email: 'minsu@example.com', role: '편집 가능' },
+])
+const inviteDraft = reactive({
+  email: '',
+  role: '편집 가능',
+  message: '',
+})
 const checklist = ref([
   { id: 1, text: '렌트카 예약', done: true },
   { id: 2, text: '첫날 점심 후보 확정', done: false },
@@ -80,6 +100,25 @@ function onDrop(targetId: number) {
   scheduleItems.value.splice(to, 0, moved)
   draggedId.value = null
 }
+
+function sendInvite() {
+  if (!inviteDraft.email.trim()) return
+  members.value.push({
+    id: Date.now(),
+    name: inviteDraft.email.trim().slice(0, 2),
+    email: inviteDraft.email.trim(),
+    role: inviteDraft.role,
+  })
+  messages.value.push({ id: Date.now(), author: 'AI', text: `${inviteDraft.email} 님에게 초대장을 보냈습니다.` })
+  inviteDraft.email = ''
+  inviteDraft.message = ''
+  inviteDraft.role = '편집 가능'
+  showInviteModal.value = false
+}
+
+function removeMember(memberId: number) {
+  members.value = members.value.filter((member) => member.id !== memberId)
+}
 </script>
 
 <template>
@@ -92,12 +131,16 @@ function onDrop(targetId: number) {
         <p class="mt-2 text-sm font-bold text-slate-500">{{ trip?.period ?? '2024.11.15 - 2024.11.17' }} · {{ trip?.destination ?? '제주도' }}</p>
       </div>
       <div class="flex items-center gap-4">
-        <div class="flex">
-          <span class="grid size-8 place-items-center rounded-full bg-blue-100 text-xs font-black text-blue-700">나</span>
-          <span class="-ml-2 grid size-8 place-items-center rounded-full bg-red-100 text-xs font-black text-red-700">지수</span>
-          <span class="-ml-2 grid size-8 place-items-center rounded-full bg-green-100 text-xs font-black text-green-700">민수</span>
-        </div>
-        <button class="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-black text-white hover:bg-brand-600">
+        <button class="flex items-center rounded-full pr-1 transition hover:scale-105" aria-label="참여자 관리" @click="showMemberModal = true">
+          <span
+            v-for="member in members.slice(0, 4)"
+            :key="member.id"
+            class="-ml-2 grid size-8 first:ml-0 place-items-center rounded-full border-2 border-white bg-brand-100 text-xs font-black text-brand-600"
+          >
+            {{ member.name }}
+          </span>
+        </button>
+        <button class="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-black text-white hover:bg-brand-600" @click="showInviteModal = true">
           <Link :size="17" />
           팀원 초대
         </button>
@@ -208,5 +251,74 @@ function onDrop(targetId: number) {
         </section>
       </aside>
     </div>
+
+    <Transition name="modal-fade">
+      <div v-if="showMemberModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
+        <section class="modal-panel w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
+          <div class="mb-4 flex items-center justify-between">
+            <h2 class="flex items-center gap-2 text-xl font-black text-slate-950">
+              <UserCog :size="22" class="text-brand-500" />
+              참여자 관리
+            </h2>
+            <button class="text-slate-500" aria-label="닫기" @click="showMemberModal = false">
+              <X :size="22" />
+            </button>
+          </div>
+          <div class="space-y-3">
+            <article v-for="member in members" :key="member.id" class="flex items-center gap-3 rounded-xl bg-slate-50 p-3">
+              <span class="grid size-9 place-items-center rounded-full bg-brand-100 text-sm font-black text-brand-600">{{ member.name }}</span>
+              <div class="min-w-0 flex-1">
+                <p class="font-black text-slate-950">{{ member.name }}</p>
+                <p class="truncate text-xs font-semibold text-slate-500">{{ member.email }}</p>
+              </div>
+              <select v-model="member.role" class="brand-input h-9 rounded-lg px-2 text-xs font-bold outline-none" :disabled="member.owner">
+                <option>소유자</option>
+                <option>편집 가능</option>
+                <option>보기만 가능</option>
+              </select>
+              <button v-if="!member.owner" class="rounded-lg bg-red-50 px-3 py-2 text-xs font-black text-red-500 hover:bg-red-100" @click="removeMember(member.id)">
+                내보내기
+              </button>
+            </article>
+          </div>
+          <button class="btn-primary mt-5 h-10 w-full rounded-lg text-sm" @click="showInviteModal = true; showMemberModal = false">
+            새 팀원 초대하기
+          </button>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="modal-fade">
+      <div v-if="showInviteModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
+        <section class="modal-panel w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+          <div class="mb-4 flex items-center justify-between">
+            <h2 class="text-xl font-black text-slate-950">팀원 초대</h2>
+            <button class="text-slate-500" aria-label="닫기" @click="showInviteModal = false">
+              <X :size="22" />
+            </button>
+          </div>
+          <div class="space-y-3">
+            <label class="block">
+              <span class="mb-1.5 block text-xs font-black text-slate-950">이메일</span>
+              <input v-model="inviteDraft.email" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="friend@example.com" />
+            </label>
+            <label class="block">
+              <span class="mb-1.5 block text-xs font-black text-slate-950">권한</span>
+              <select v-model="inviteDraft.role" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none">
+                <option>편집 가능</option>
+                <option>보기만 가능</option>
+              </select>
+            </label>
+            <label class="block">
+              <span class="mb-1.5 block text-xs font-black text-slate-950">초대 메시지</span>
+              <input v-model="inviteDraft.message" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="같이 일정 짜보자!" />
+            </label>
+          </div>
+          <button class="btn-primary mt-5 h-10 w-full rounded-lg text-sm" @click="sendInvite">
+            초대 보내기
+          </button>
+        </section>
+      </div>
+    </Transition>
   </section>
 </template>

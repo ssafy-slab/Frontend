@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
-import { Plane, Plus, X } from 'lucide-vue-next'
+import { computed, reactive, ref } from 'vue'
+import { MoreHorizontal, Plane, Plus, Trash2, X } from 'lucide-vue-next'
 import type { Trip } from '@/entities/travel/model/travel'
 import { trips } from '@/entities/travel/model/travel'
 
@@ -21,12 +21,16 @@ const emit = defineEmits<{
 const localTrips = ref<Trip[]>([...trips])
 const activePhase = ref<'upcoming' | 'past'>('upcoming')
 const showModal = ref(false)
+const manageMode = ref(false)
+const deleteTarget = ref<Trip | null>(null)
 const draft = reactive({
   title: '',
   destination: '',
   start: '',
   end: '',
 })
+
+const visibleTrips = computed(() => localTrips.value.filter((trip) => trip.phase === activePhase.value))
 
 function createTrip() {
   if (!draft.title.trim() || !draft.destination.trim()) return
@@ -52,6 +56,21 @@ function createTrip() {
   showModal.value = false
   emit('saved', '새 일정이 추가되었습니다.')
 }
+
+function requestDeleteTrip(trip: Trip) {
+  if (trip.members.length > 1) {
+    emit('saved', '초대된 유저가 있는 일정은 삭제할 수 없습니다.')
+    return
+  }
+  deleteTarget.value = trip
+}
+
+function confirmDeleteTrip() {
+  if (!deleteTarget.value) return
+  localTrips.value = localTrips.value.filter((item) => item.id !== deleteTarget.value?.id)
+  emit('saved', `${deleteTarget.value.title} 일정이 삭제되었습니다.`)
+  deleteTarget.value = null
+}
 </script>
 
 <template>
@@ -73,17 +92,24 @@ function createTrip() {
           지난 일정 ({{ localTrips.filter((trip) => trip.phase === 'past').length }})
         </button>
       </div>
-      <button class="rounded-lg bg-brand-500 px-3.5 py-2 text-xs font-black text-white hover:bg-brand-600" @click="showModal = true">
-        + 새 일정 만들기
-      </button>
+      <div class="flex gap-2">
+        <button class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-3.5 py-2 text-xs font-black text-slate-700 hover:bg-slate-200" @click="manageMode = !manageMode">
+          <MoreHorizontal :size="15" />
+          {{ manageMode ? '관리 종료' : '일정 관리' }}
+        </button>
+        <button class="rounded-lg bg-brand-500 px-3.5 py-2 text-xs font-black text-white hover:bg-brand-600" @click="showModal = true">
+          + 새 일정 만들기
+        </button>
+      </div>
     </div>
 
     <div class="space-y-3">
       <article
-        v-for="trip in localTrips.filter((item) => item.phase === activePhase)"
+        v-for="trip in visibleTrips"
         :key="trip.id"
-        class="brand-card group relative grid cursor-pointer overflow-hidden rounded-lg transition duration-200 hover:-translate-y-0.5 hover:border-brand-500 hover:shadow-md sm:grid-cols-[132px_1fr]"
-        @click="emit('openTrip', trip)"
+        class="brand-card group relative grid overflow-hidden rounded-lg transition duration-200 hover:-translate-y-0.5 hover:border-brand-500 hover:shadow-md sm:grid-cols-[132px_1fr]"
+        :class="manageMode ? '' : 'cursor-pointer'"
+        @click="!manageMode && emit('openTrip', trip)"
       >
         <div class="relative h-28 bg-slate-200 sm:h-auto">
           <img :src="trip.image" :alt="trip.title" class="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
@@ -109,52 +135,89 @@ function createTrip() {
                 {{ member }}
               </span>
             </div>
-            <span class="text-[11px] font-black text-brand-500 sm:text-xs">상세 보기 →</span>
+            <button
+              v-if="manageMode"
+              class="inline-flex items-center gap-1 rounded-lg bg-red-50 px-3 py-2 text-xs font-black text-red-500 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="trip.members.length > 1"
+              :title="trip.members.length > 1 ? '초대된 유저가 없어야 삭제할 수 있습니다.' : '일정 삭제'"
+              @click.stop="requestDeleteTrip(trip)"
+            >
+              <Trash2 :size="14" />
+              삭제
+            </button>
+            <span v-else class="text-[11px] font-black text-brand-500 sm:text-xs">상세 보기 →</span>
           </div>
         </div>
       </article>
 
-      <p v-if="localTrips.filter((item) => item.phase === activePhase).length === 0" class="rounded-xl bg-white p-8 text-center text-sm font-bold text-slate-500">
+      <p v-if="visibleTrips.length === 0" class="rounded-xl bg-white p-8 text-center text-sm font-bold text-slate-500">
         해당 탭에 표시할 일정이 없습니다.
       </p>
     </div>
 
     <Transition name="modal-fade">
       <div v-if="showModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
-      <section class="modal-panel w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl sm:max-w-md">
-        <div class="mb-4 flex items-center justify-between">
-          <h2 class="flex items-center gap-2 text-xl font-black text-slate-950">
-            <Plane :size="24" class="text-brand-500" />
-            새 일정 만들기
-          </h2>
-          <button class="text-slate-500" aria-label="닫기" @click="showModal = false">
-            <X :size="24" />
-          </button>
-        </div>
+        <section class="modal-panel w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl sm:max-w-md">
+          <div class="mb-4 flex items-center justify-between">
+            <h2 class="flex items-center gap-2 text-xl font-black text-slate-950">
+              <Plane :size="24" class="text-brand-500" />
+              새 일정 만들기
+            </h2>
+            <button class="text-slate-500" aria-label="닫기" @click="showModal = false">
+              <X :size="24" />
+            </button>
+          </div>
 
-        <div class="space-y-3.5">
-          <label class="block">
-            <span class="mb-1.5 block text-xs font-black text-slate-950">여행 제목</span>
-            <input v-model="draft.title" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="예: 부산 힐링 여행" />
-          </label>
-          <label class="block">
-            <span class="mb-1.5 block text-xs font-black text-slate-950">목적지</span>
-            <input v-model="draft.destination" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="어디로 떠나시나요?" />
-          </label>
-          <div>
-            <span class="mb-1.5 block text-xs font-black text-slate-950">여행 기간</span>
-            <div class="grid grid-cols-1 gap-2">
-              <input v-model="draft.start" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="시작일 (연도-월-일)" />
-              <input v-model="draft.end" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="종료일 (연도-월-일)" />
+          <div class="space-y-3.5">
+            <label class="block">
+              <span class="mb-1.5 block text-xs font-black text-slate-950">여행 제목</span>
+              <input v-model="draft.title" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="예: 부산 힐링 여행" />
+            </label>
+            <label class="block">
+              <span class="mb-1.5 block text-xs font-black text-slate-950">목적지</span>
+              <input v-model="draft.destination" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="어디로 떠나시나요?" />
+            </label>
+            <div>
+              <span class="mb-1.5 block text-xs font-black text-slate-950">여행 기간</span>
+              <div class="grid grid-cols-1 gap-2">
+                <input v-model="draft.start" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="시작일 (연도-월-일)" />
+                <input v-model="draft.end" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="종료일 (연도-월-일)" />
+              </div>
             </div>
           </div>
-        </div>
 
-        <button class="btn-primary mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg text-sm" @click="createTrip">
-          <Plus :size="16" />
-          일정 추가하기
-        </button>
-      </section>
+          <button class="btn-primary mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg text-sm" @click="createTrip">
+            <Plus :size="16" />
+            일정 추가하기
+          </button>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="modal-fade">
+      <div v-if="deleteTarget" class="fixed inset-0 z-[90] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
+        <section class="modal-panel w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
+          <div class="mb-4 flex items-center justify-between">
+            <h2 class="text-xl font-black text-slate-950">일정을 삭제하시겠습니까?</h2>
+            <button class="text-slate-500" aria-label="닫기" @click="deleteTarget = null">
+              <X :size="22" />
+            </button>
+          </div>
+          <p class="text-sm font-semibold leading-6 text-slate-600">
+            {{ deleteTarget.title }} 일정은 삭제 후 되돌릴 수 없습니다.
+          </p>
+          <p class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-black text-red-500">
+            초대된 유저가 한 명도 없는 일정만 삭제할 수 있습니다.
+          </p>
+          <div class="mt-5 flex justify-end gap-2">
+            <button class="h-10 rounded-lg bg-slate-100 px-4 text-sm font-black text-slate-700" @click="deleteTarget = null">
+              취소
+            </button>
+            <button class="h-10 rounded-lg bg-red-500 px-4 text-sm font-black text-white hover:bg-red-600" @click="confirmDeleteTrip">
+              삭제하기
+            </button>
+          </div>
+        </section>
       </div>
     </Transition>
   </section>

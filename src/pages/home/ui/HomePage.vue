@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Bot, Flame, MapPinned, Plane, X } from 'lucide-vue-next'
-import { ref } from 'vue'
-import { hotKeywords, hotPlaces, places } from '@/entities/travel/model/travel'
+import { Bot, Flame, MapPinned, Plane } from 'lucide-vue-next'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { hotKeywords, hotPlaces, places, posts } from '@/entities/travel/model/travel'
 import type { Place } from '@/entities/travel/model/travel'
 
 const emit = defineEmits<{
@@ -9,11 +9,74 @@ const emit = defineEmits<{
   openPlace: [place: Place]
 }>()
 
-const showScheduleModal = ref(false)
+type HeroSlide = {
+  image: string
+  title: string
+  caption: string
+  placeId: number
+}
+
+const heroSlides: HeroSlide[] = [
+  {
+    image: 'https://images.unsplash.com/photo-1546874177-9e664107314e?auto=format&fit=crop&w=1400&q=80',
+    title: '제주 오름',
+    caption: '바람 따라 걷는 자연 코스',
+    placeId: 3,
+  },
+  {
+    image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1400&q=80',
+    title: '강릉 안목해변',
+    caption: '커피 향 가득한 바다 여행',
+    placeId: 1,
+  },
+  {
+    image: 'https://images.unsplash.com/photo-1506816561089-5cc37b3aa9b0?auto=format&fit=crop&w=1400&q=80',
+    title: '서울 북촌 한옥마을',
+    caption: '도심 속 전통 골목 산책',
+    placeId: 4,
+  },
+  {
+    image: 'https://images.unsplash.com/photo-1506812574058-fc75fa93fead?auto=format&fit=crop&w=1400&q=80',
+    title: '부산 광안리',
+    caption: '야경이 예쁜 해변 코스',
+    placeId: 4,
+  },
+  {
+    image: 'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=1400&q=80',
+    title: '서울 남산',
+    caption: '노을과 야경을 함께 보는 하루',
+    placeId: 4,
+  },
+]
+
+const rollingHotPlaces = [...hotPlaces, ...hotPlaces, ...hotPlaces]
+const activeSlideIndex = ref(0)
+let slideTimer: number | undefined
+
+const activeSlide = computed<HeroSlide>(() => heroSlides[activeSlideIndex.value] ?? heroSlides[0]!)
 
 function getLinkedPlace(index: number): Place {
   return places[index % places.length] ?? places[0]!
 }
+
+function setSlide(index: number) {
+  activeSlideIndex.value = index
+}
+
+function openHeroPlace() {
+  const place = places.find((item) => item.id === activeSlide.value.placeId) ?? places[0]
+  if (place) emit('openPlace', place)
+}
+
+onMounted(() => {
+  slideTimer = window.setInterval(() => {
+    activeSlideIndex.value = (activeSlideIndex.value + 1) % heroSlides.length
+  }, 4000)
+})
+
+onUnmounted(() => {
+  if (slideTimer) window.clearInterval(slideTimer)
+})
 </script>
 
 <template>
@@ -31,11 +94,11 @@ function getLinkedPlace(index: number): Place {
         <div class="mt-6 grid gap-3 sm:max-w-lg">
           <button
             class="flex items-center justify-between rounded-xl bg-brand-500 px-5 py-5 text-left text-white shadow-sm hover:bg-brand-600"
-            @click="showScheduleModal = true"
+            @click="emit('change', 'schedule')"
           >
             <span>
-              <span class="block text-xl font-black">새 일정 만들기</span>
-              <span class="mt-1 block text-sm font-bold text-brand-100">AI 맞춤 추천 및 팀원 초대하기</span>
+              <span class="block text-xl font-black">일정 탭으로 이동</span>
+              <span class="mt-1 block text-sm font-bold text-brand-100">내 여행 일정 확인하고 새 일정 만들기</span>
             </span>
             <span class="grid size-11 place-items-center rounded-full bg-white/20">
               <Plane :size="24" />
@@ -67,79 +130,92 @@ function getLinkedPlace(index: number): Place {
         </div>
       </div>
 
-      <img
-        src="https://images.unsplash.com/photo-1523906834658-6e24ef2386f9?auto=format&fit=crop&w=1200&q=80"
-        alt="베네치아 운하"
-        class="h-64 w-full rounded-xl object-cover shadow-lg shadow-slate-300 sm:h-80 lg:h-[420px]"
-      />
+      <div class="relative h-64 cursor-pointer overflow-hidden rounded-xl bg-slate-200 text-left shadow-lg shadow-slate-300 sm:h-80 lg:h-[420px]" role="button" tabindex="0" @click="openHeroPlace" @keyup.enter="openHeroPlace">
+        <Transition name="hero-slide" mode="out-in">
+          <img
+            :key="activeSlide.image"
+            :src="activeSlide.image"
+            :alt="activeSlide.title"
+            class="absolute inset-0 h-full w-full object-cover"
+          />
+        </Transition>
+        <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/65 to-transparent p-4 text-white">
+          <p class="text-sm font-black">{{ activeSlide.caption }}</p>
+          <p class="mt-1 text-xs font-semibold text-white/80">{{ activeSlide.title }}</p>
+        </div>
+        <div class="absolute right-4 top-4 flex gap-1.5">
+          <button
+            v-for="(_, index) in heroSlides"
+            :key="index"
+            class="h-2 rounded-full bg-white/70 transition-all"
+            :class="activeSlideIndex === index ? 'w-6 opacity-100' : 'w-2 opacity-70'"
+            :aria-label="`${index + 1}번째 이미지 보기`"
+            @click.stop="setSlide(index)"
+          />
+        </div>
+      </div>
     </div>
 
-    <section class="mt-10 md:mt-12">
+    <section class="relative mt-20 md:mt-24">
       <h2 class="mb-5 flex items-center gap-2 text-xl font-black text-slate-950 sm:text-2xl">
         <MapPinned :size="24" class="text-brand-500" fill="currentColor" />
         요즘 뜨는 핫플레이스
       </h2>
-      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <article
-          v-for="(place, index) in hotPlaces"
-          :key="place.title"
-          class="brand-card group cursor-pointer overflow-hidden rounded-xl transition duration-200 hover:-translate-y-1 hover:border-brand-500 hover:shadow-md"
-          @click="emit('openPlace', getLinkedPlace(index))"
-        >
-          <div class="relative h-36 bg-slate-200 sm:h-40">
-            <img :src="place.image" :alt="place.title" class="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
-            <span
-              v-if="place.aiPick"
-              class="absolute left-3 top-3 inline-flex items-center gap-1 rounded-lg bg-brand-500 px-2.5 py-1.5 text-xs font-black text-white"
+      <div class="hotplace-bleed">
+        <div class="hotplace-marquee">
+          <div class="hotplace-track flex gap-4 py-3">
+            <article
+              v-for="(place, index) in rollingHotPlaces"
+              :key="`${place.title}-${index}`"
+              class="hotplace-card brand-card group w-[260px] shrink-0 cursor-pointer overflow-hidden rounded-xl transition duration-300 hover:z-10 hover:border-brand-500 hover:shadow-xl"
+              @click="emit('openPlace', getLinkedPlace(index))"
             >
-              <Bot :size="13" />
-              AI 추천
-            </span>
+              <div class="relative h-36 bg-slate-200 sm:h-40">
+                <img :src="place.image" :alt="place.title" class="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+                <span
+                  v-if="place.aiPick"
+                  class="absolute left-3 top-3 inline-flex items-center gap-1 rounded-lg bg-brand-500 px-2.5 py-1.5 text-xs font-black text-white"
+                >
+                  <Bot :size="13" />
+                  AI 추천
+                </span>
+              </div>
+              <div class="p-4">
+                <h3 class="text-base font-black text-slate-950">{{ place.title }}</h3>
+                <p class="mt-1.5 text-sm font-semibold text-slate-500">{{ place.description }}</p>
+              </div>
+            </article>
           </div>
-          <div class="p-4">
-            <h3 class="text-base font-black text-slate-950">{{ place.title }}</h3>
-            <p class="mt-1.5 text-sm font-semibold text-slate-500">{{ place.description }}</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="mt-20 md:mt-24">
+      <div class="mb-5 flex items-center justify-between gap-3">
+        <h2 class="text-xl font-black text-slate-950 sm:text-2xl">커뮤니티 인기글</h2>
+        <button class="text-sm font-black text-brand-500" @click="emit('change', 'community')">더 보기</button>
+      </div>
+      <div class="grid gap-4 md:grid-cols-2">
+        <article
+          v-for="post in posts"
+          :key="post.id"
+          class="brand-card cursor-pointer overflow-hidden rounded-xl transition hover:-translate-y-0.5 hover:border-brand-500 hover:shadow-md"
+          @click="emit('change', 'community-detail')"
+        >
+          <div class="grid sm:grid-cols-[160px_1fr]">
+            <img :src="post.image" :alt="post.title" class="h-40 w-full object-cover sm:h-full" />
+            <div class="p-4">
+              <p class="text-xs font-black text-brand-500">{{ post.category }}</p>
+              <h3 class="mt-2 text-base font-black leading-snug text-slate-950">{{ post.title }}</h3>
+              <p class="mt-2 line-clamp-2 text-sm font-semibold leading-6 text-slate-500">{{ post.excerpt }}</p>
+              <div class="mt-4 flex items-center justify-between text-xs font-bold text-slate-500">
+                <span>{{ post.author }}</span>
+                <span>좋아요 {{ post.likes }}</span>
+              </div>
+            </div>
           </div>
         </article>
       </div>
     </section>
-
-    <Transition name="modal-fade">
-      <div v-if="showScheduleModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
-        <section class="modal-panel w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl sm:max-w-md">
-          <div class="mb-4 flex items-center justify-between">
-            <h2 class="flex items-center gap-2 text-xl font-black text-slate-950">
-              <Plane :size="24" class="text-brand-500" />
-              새 일정 만들기
-            </h2>
-            <button class="text-slate-500" aria-label="닫기" @click="showScheduleModal = false">
-              <X :size="24" />
-            </button>
-          </div>
-
-          <div class="space-y-3.5">
-            <label class="block">
-              <span class="mb-1.5 block text-xs font-black text-slate-950">여행 제목</span>
-              <input class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="예: 부산 힐링 여행" />
-            </label>
-            <label class="block">
-              <span class="mb-1.5 block text-xs font-black text-slate-950">목적지</span>
-              <input class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="어디로 떠나시나요?" />
-            </label>
-            <div>
-              <span class="mb-1.5 block text-xs font-black text-slate-950">여행 기간</span>
-              <div class="grid grid-cols-1 gap-2">
-                <input class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="시작일 (연도-월-일)" />
-                <input class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="종료일 (연도-월-일)" />
-              </div>
-            </div>
-          </div>
-
-          <button class="btn-primary mt-5 h-10 w-full rounded-lg text-sm" @click="showScheduleModal = false">
-            일정 상세 만들기
-          </button>
-        </section>
-      </div>
-    </Transition>
   </section>
 </template>

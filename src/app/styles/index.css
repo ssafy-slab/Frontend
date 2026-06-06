@@ -23,6 +23,7 @@ body {
   background: #f8fafc;
   color: #334155;
   letter-spacing: 0;
+  overflow-x: hidden;
 }
 
 button,
@@ -60,12 +61,12 @@ button {
 
 @media (min-width: 2400px) {
   .app-container {
-    width: min(100% - 360px, 1520px);
+    width: min(100% - 640px, 1320px);
   }
 }
 
 .page-shell {
-  min-height: calc(100vh - 64px);
+  min-height: calc(100vh - 64px - 73px);
 }
 
 .brand-card {
@@ -147,6 +148,23 @@ button {
   transform: translateY(14px) scale(0.97);
 }
 
+.hero-slide-enter-active,
+.hero-slide-leave-active {
+  transition:
+    opacity 620ms ease,
+    transform 620ms ease;
+}
+
+.hero-slide-enter-from {
+  opacity: 0;
+  transform: scale(1.04);
+}
+
+.hero-slide-leave-to {
+  opacity: 0;
+  transform: scale(1.01);
+}
+
 .like-button.liked svg {
   animation: like-pop 260ms ease-out;
 }
@@ -166,6 +184,42 @@ button {
 
 .schedule-drag-card:active {
   cursor: grabbing;
+}
+
+.kakao-map-mock {
+  background-image:
+    linear-gradient(90deg, rgba(148, 163, 184, 0.2) 1px, transparent 1px),
+    linear-gradient(rgba(148, 163, 184, 0.18) 1px, transparent 1px);
+  background-size: 42px 42px;
+}
+
+.hotplace-bleed {
+  width: 100%;
+  overflow: hidden;
+  padding-block: 12px;
+}
+
+.hotplace-marquee {
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.hotplace-track {
+  width: max-content;
+  animation: hotplace-slide 36s linear infinite;
+  will-change: transform;
+}
+
+.hotplace-marquee:hover .hotplace-track {
+  animation-play-state: paused;
+}
+
+.hotplace-card {
+  transform-origin: center;
+}
+
+.hotplace-card:hover {
+  transform: translateY(-5px) scale(1.04);
 }
 
 @keyframes like-pop {
@@ -188,5 +242,14 @@ button {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes hotplace-slide {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-33.333% - 6px));
   }
 }
