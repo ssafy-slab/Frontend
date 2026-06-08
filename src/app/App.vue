@@ -12,6 +12,7 @@ import ScheduleDetailPage from '@/pages/schedule/ui/ScheduleDetailPage.vue'
 import SchedulePage from '@/pages/schedule/ui/SchedulePage.vue'
 import AppFooter from '@/widgets/footer/ui/AppFooter.vue'
 import AppHeader from '@/widgets/header/ui/AppHeader.vue'
+import MobileNav from '@/widgets/mobile-nav/ui/MobileNav.vue'
 import type { CommunityPost, Place, Trip } from '@/entities/travel/model/travel'
 import { places, posts, trips } from '@/entities/travel/model/travel'
 
@@ -93,7 +94,7 @@ function handleLogout() {
     @logout="handleLogout"
   />
 
-  <main class="page-shell">
+  <main class="page-shell pb-24 md:pb-0">
     <Transition name="page-fade" mode="out-in">
       <HomePage v-if="activeView === 'home'" key="home" @change="changeView" @open-place="openPlace" />
       <ExplorePage v-else-if="activeView === 'explore'" key="explore" @open-place="openPlace" @saved="showToast" />
@@ -110,8 +111,10 @@ function handleLogout() {
 
   <AppFooter />
 
+  <MobileNav :active-view="activeView" @change="changeView" />
+
   <Transition name="toast-pop">
-    <div v-if="toastMessage" class="fixed bottom-6 left-1/2 z-[90] -translate-x-1/2 rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl">
+    <div v-if="toastMessage" class="fixed bottom-24 left-1/2 z-[90] -translate-x-1/2 rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl md:bottom-6">
       {{ toastMessage }}
     </div>
   </Transition>
