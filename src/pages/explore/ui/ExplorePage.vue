@@ -74,17 +74,17 @@ function addToTrip() {
               {{ filter }}
             </button>
           </div>
-          <label class="relative inline-flex w-fit items-center">
+          <label class="select-wrap">
             <select
               v-model="sortOption"
-              class="appearance-none rounded-full border border-slate-200 bg-slate-50 py-2 pl-4 pr-8 text-xs font-black text-slate-950 outline-none sm:text-sm"
+              class="select-control h-9 rounded-full border border-slate-200 bg-slate-50 pl-4 text-xs font-black text-slate-950 outline-none sm:text-sm"
               aria-label="정렬"
             >
               <option>추천순</option>
               <option>평점순</option>
               <option>리뷰순</option>
             </select>
-            <ChevronDown :size="16" class="pointer-events-none absolute right-3 text-slate-700" />
+            <ChevronDown :size="15" class="select-chevron" />
           </label>
         </div>
       </div>
@@ -152,7 +152,7 @@ function addToTrip() {
             @click="selectedPlaceId = place.id"
           >
             <span class="relative block">
-              <span class="absolute left-1/2 top-2 size-2.5 -translate-x-1/2 rounded-full bg-white" />
+              <span class="absolute left-1/2 top-2 z-10 size-3 -translate-x-1/2 rounded-full border border-white/80 bg-white shadow-sm" />
               <svg viewBox="0 0 48 64" class="relative h-11 w-9 fill-current">
                 <path d="M24 0C10.9 0 0 10.7 0 24c0 18 24 40 24 40s24-22 24-40C48 10.7 37.1 0 24 0Z" />
               </svg>
@@ -205,11 +205,14 @@ function addToTrip() {
           <div class="space-y-3">
             <label class="block">
               <span class="mb-1.5 block text-xs font-black text-slate-950">추가할 일정</span>
-              <select v-model="addDraft.tripId" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none">
-                <option v-for="trip in trips.filter((item) => item.phase === 'upcoming')" :key="trip.id" :value="String(trip.id)">
-                  {{ trip.title }}
-                </option>
-              </select>
+              <span class="select-wrap select-wrap-full">
+                <select v-model="addDraft.tripId" class="brand-input select-control h-10 w-full rounded-lg px-3 text-sm outline-none">
+                  <option v-for="trip in trips.filter((item) => item.phase === 'upcoming')" :key="trip.id" :value="String(trip.id)">
+                    {{ trip.title }}
+                  </option>
+                </select>
+                <ChevronDown :size="15" class="select-chevron" />
+              </span>
             </label>
             <label class="block">
               <span class="mb-1.5 block text-xs font-black text-slate-950">방문 시간대</span>

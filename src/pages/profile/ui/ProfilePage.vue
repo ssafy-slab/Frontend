@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ChevronDown } from 'lucide-vue-next'
+
 type User = {
   email: string
   nickname: string
@@ -45,19 +47,25 @@ const emit = defineEmits<{
           </label>
           <label class="block">
             <span class="mb-1.5 block text-xs font-black text-slate-950">선호 여행 타입</span>
-            <select class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none">
-              <option>맛집 중심</option>
-              <option>자연/힐링</option>
-              <option>도시 산책</option>
-            </select>
+            <span class="select-wrap select-wrap-full">
+              <select class="brand-input select-control h-10 w-full rounded-lg px-3 text-sm outline-none">
+                <option>맛집 중심</option>
+                <option>자연/힐링</option>
+                <option>도시 산책</option>
+              </select>
+              <ChevronDown :size="15" class="select-chevron" />
+            </span>
           </label>
           <label class="block">
             <span class="mb-1.5 block text-xs font-black text-slate-950">알림 설정</span>
-            <select class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none">
-              <option>이메일과 앱 알림</option>
-              <option>앱 알림만</option>
-              <option>알림 끄기</option>
-            </select>
+            <span class="select-wrap select-wrap-full">
+              <select class="brand-input select-control h-10 w-full rounded-lg px-3 text-sm outline-none">
+                <option>이메일과 앱 알림</option>
+                <option>앱 알림만</option>
+                <option>알림 끄기</option>
+              </select>
+              <ChevronDown :size="15" class="select-chevron" />
+            </span>
           </label>
         </div>
 

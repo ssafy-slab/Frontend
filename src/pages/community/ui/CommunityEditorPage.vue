@@ -45,13 +45,13 @@ function submitPost() {
       <div class="grid gap-5">
         <label class="block">
           <span class="mb-2 block text-sm font-black text-slate-950">카테고리</span>
-          <span class="relative inline-flex w-full items-center">
-            <select v-model="form.category" class="brand-input h-11 w-full appearance-none rounded-lg px-3 pr-9 text-sm outline-none">
+          <span class="select-wrap select-wrap-full">
+            <select v-model="form.category" class="brand-input select-control h-11 w-full rounded-lg px-3 text-sm outline-none">
               <option>베스트 일정</option>
               <option>포토 리뷰</option>
               <option>여행 꿀팁</option>
             </select>
-            <ChevronDown :size="17" class="pointer-events-none absolute right-3 text-slate-600" />
+            <ChevronDown :size="15" class="select-chevron" />
           </span>
         </label>
 

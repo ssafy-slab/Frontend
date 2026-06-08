@@ -121,7 +121,7 @@ onUnmounted(() => {
 
         <div class="mt-6 flex flex-wrap items-center gap-2 text-sm">
           <span class="inline-flex items-center gap-1 font-black text-slate-950">
-            <Flame :size="16" class="text-red-500" fill="currentColor" />
+            <Flame :size="16" class="text-red-500" />
             지금 뜨는 키워드:
           </span>
           <button v-for="keyword in hotKeywords" :key="keyword" class="rounded-full bg-slate-100 px-3 py-1.5 font-bold text-slate-500">
@@ -157,8 +157,10 @@ onUnmounted(() => {
     </div>
 
     <section class="relative mt-20 md:mt-24">
-      <h2 class="mb-5 flex items-center gap-2 text-xl font-black text-slate-950 sm:text-2xl">
-        <MapPinned :size="24" class="text-brand-500" fill="currentColor" />
+      <h2 class="mb-5 flex items-center gap-2.5 text-xl font-black text-slate-950 sm:text-2xl">
+        <span class="section-title-icon" aria-hidden="true">
+          <MapPinned :size="18" />
+        </span>
         요즘 뜨는 핫플레이스
       </h2>
       <div class="hotplace-bleed">
@@ -192,7 +194,12 @@ onUnmounted(() => {
 
     <section class="mt-20 md:mt-24">
       <div class="mb-5 flex items-center justify-between gap-3">
-        <h2 class="text-xl font-black text-slate-950 sm:text-2xl">커뮤니티 인기글</h2>
+        <h2 class="flex items-center gap-2.5 text-xl font-black text-slate-950 sm:text-2xl">
+          <span class="section-title-icon text-red-500" aria-hidden="true">
+            <Flame :size="18" />
+          </span>
+          커뮤니티 인기글
+        </h2>
         <button class="text-sm font-black text-brand-500" @click="emit('change', 'community')">더 보기</button>
       </div>
       <div class="grid gap-4 md:grid-cols-2">

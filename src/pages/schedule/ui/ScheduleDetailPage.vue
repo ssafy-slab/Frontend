@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref } from 'vue'
-import { Bot, CalendarCheck, GripVertical, Link, MapPin, MoreVertical, Send, SquareCheck, UserCog, X } from 'lucide-vue-next'
+import { Bot, CalendarCheck, ChevronDown, Link, ListOrdered, MapPin, Plus, Send, SquareCheck, Trash2, UserCog, X } from 'lucide-vue-next'
 import type { Trip } from '@/entities/travel/model/travel'
 
 const props = defineProps<{
@@ -9,13 +9,17 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   change: [view: string]
+  saved: [message: string]
 }>()
 
 type ScheduleItem = {
   id: number
+  date: string
   time: string
   title: string
   note: string
+  category: string
+  location: string
   active?: boolean
 }
 
@@ -34,11 +38,12 @@ type Member = {
   owner?: boolean
 }
 
-const draggedId = ref<number | null>(null)
 const messageText = ref('')
 const voted = ref('숙성도 노형본점')
 const showInviteModal = ref(false)
 const showMemberModal = ref(false)
+const showOrderModal = ref(false)
+const deleteScheduleTarget = ref<ScheduleItem | null>(null)
 const members = ref<Member[]>([
   { id: 1, name: '나', email: 'me@example.com', role: '소유자', owner: true },
   { id: 2, name: '지수', email: 'jisu@example.com', role: '편집 가능' },
@@ -60,13 +65,20 @@ const messages = ref<Message[]>([
   { id: 3, author: '나', text: '좋아. 투표 올려줘!', mine: true },
 ])
 const scheduleItems = ref<ScheduleItem[]>([
-  { id: 1, time: '12:00', title: '공항 도착', note: '렌트카 픽업' },
-  { id: 2, time: '13:30', title: '점심 식사', note: '제주 흑돼지 명가', active: true },
-  { id: 3, time: '10:00', title: '비자림 산책', note: '맑은 공기 마시며 힐링 타임' },
-  { id: 4, time: '14:00', title: '성산일출봉', note: '정상에서 기념 사진' },
+  { id: 1, date: '2024.11.15(금)', time: '12:00~13:00', title: '공항 도착', note: '렌트카 픽업', category: '이동', location: '제주국제공항' },
+  { id: 2, date: '2024.11.15(금)', time: '13:30~15:00', title: '점심 식사', note: '제주 흑돼지 명가', category: '음식점', location: '제주시 흑돼지 거리', active: true },
+  { id: 3, date: '2024.11.16(토)', time: '10:00~12:00', title: '비자림 산책', note: '맑은 공기 마시며 힐링 타임', category: '관광명소', location: '제주시 구좌읍 비자숲길' },
+  { id: 4, date: '2024.11.16(토)', time: '14:00~16:00', title: '성산일출봉', note: '정상에서 기념 사진', category: '관광명소', location: '서귀포시 성산읍' },
 ])
 
 const doneCount = computed(() => checklist.value.filter((item) => item.done).length)
+const scheduleGroups = computed(() => {
+  const groups = new Map<string, ScheduleItem[]>()
+  scheduleItems.value.forEach((item) => {
+    groups.set(item.date, [...(groups.get(item.date) ?? []), item])
+  })
+  return Array.from(groups, ([date, items]) => ({ date, items }))
+})
 
 function sendMessage() {
   const text = messageText.value.trim()
@@ -78,27 +90,6 @@ function sendMessage() {
       messages.value.push({ id: Date.now() + 1, author: 'AI', text: '좋아요. 해당 요청을 일정 후보에 반영해볼게요.' })
     }, 280)
   })
-}
-
-function onDrop(targetId: number) {
-  if (!draggedId.value || draggedId.value === targetId) {
-    draggedId.value = null
-    return
-  }
-
-  const from = scheduleItems.value.findIndex((item) => item.id === draggedId.value)
-  const to = scheduleItems.value.findIndex((item) => item.id === targetId)
-  if (from < 0 || to < 0) {
-    draggedId.value = null
-    return
-  }
-  const [moved] = scheduleItems.value.splice(from, 1)
-  if (!moved) {
-    draggedId.value = null
-    return
-  }
-  scheduleItems.value.splice(to, 0, moved)
-  draggedId.value = null
 }
 
 function sendInvite() {
@@ -118,6 +109,18 @@ function sendInvite() {
 
 function removeMember(memberId: number) {
   members.value = members.value.filter((member) => member.id !== memberId)
+}
+
+function requestRemoveScheduleItem(item: ScheduleItem) {
+  deleteScheduleTarget.value = item
+}
+
+function confirmRemoveScheduleItem() {
+  if (!deleteScheduleTarget.value) return
+  const target = deleteScheduleTarget.value
+  scheduleItems.value = scheduleItems.value.filter((item) => item.id !== target.id)
+  deleteScheduleTarget.value = null
+  emit('saved', `${target.title}을 삭제했습니다.`)
 }
 </script>
 
@@ -151,33 +154,39 @@ function removeMember(memberId: number) {
       <aside class="brand-card overflow-hidden rounded-xl">
         <div class="flex items-center justify-between border-b border-slate-200 bg-slate-100 px-4 py-3">
           <h2 class="font-black text-slate-950">전체 일정</h2>
-          <MoreVertical :size="18" class="text-slate-500" />
+          <button class="inline-flex items-center gap-1 rounded-lg bg-brand-500 px-3 py-2 text-xs font-black text-white hover:bg-brand-600" aria-label="일정 순서 확인" @click="showOrderModal = true">
+            <Plus :size="15" />
+            순서 확인
+          </button>
         </div>
-        <div class="space-y-3 p-4">
-          <article
-            v-for="item in scheduleItems"
-            :key="item.id"
-            draggable="true"
-            class="schedule-drag-card rounded-lg border bg-white p-3 shadow-sm transition"
-            :class="[item.active ? 'border-l-4 border-brand-500' : 'border-slate-200', draggedId === item.id ? 'scale-[0.98] opacity-50' : '']"
-            @dragstart="draggedId = item.id"
-            @dragover.prevent
-            @drop="onDrop(item.id)"
-          >
-            <div class="flex items-start gap-2">
-              <GripVertical :size="17" class="mt-0.5 shrink-0 text-slate-300" />
-              <div>
-                <h3 class="text-sm font-black text-slate-800">{{ item.time }} {{ item.title }}</h3>
-                <p class="mt-1 flex items-center gap-1 text-xs font-bold text-slate-500">
-                  <MapPin v-if="item.active" :size="14" />
-                  {{ item.note }}
-                </p>
-              </div>
+        <div class="space-y-4 p-4">
+          <section v-for="group in scheduleGroups" :key="group.date">
+            <h3 class="mb-2 flex items-center gap-1.5 text-xs font-black text-brand-500">
+              <CalendarCheck :size="14" />
+              {{ group.date }}
+            </h3>
+            <div class="space-y-2">
+              <article
+                v-for="item in group.items"
+                :key="item.id"
+                class="rounded-lg border bg-white p-3 shadow-sm transition hover:border-brand-500"
+                :class="item.active ? 'border-l-4 border-brand-500' : 'border-slate-200'"
+              >
+                <div class="flex items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <h4 class="text-sm font-black text-slate-800">{{ item.time }} {{ item.title }}</h4>
+                    <p class="mt-1 flex items-center gap-1 text-xs font-bold text-slate-500">
+                      <MapPin v-if="item.active" :size="14" />
+                      {{ item.note }}
+                    </p>
+                  </div>
+                  <button class="grid size-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-red-50 hover:text-red-500" :aria-label="`${item.title} 삭제`" @click="requestRemoveScheduleItem(item)">
+                    <Trash2 :size="16" />
+                  </button>
+                </div>
+              </article>
             </div>
-          </article>
-          <div class="rounded-lg border-2 border-dashed border-slate-300 px-4 py-4 text-center text-xs font-bold text-slate-400">
-            일정을 드래그해서 순서를 바꿔보세요
-          </div>
+          </section>
         </div>
       </aside>
 
@@ -224,7 +233,7 @@ function removeMember(memberId: number) {
               @click="voted = option"
             >
               {{ option }} {{ option === '숙성도 노형본점' ? '(2명)' : '(0명)' }}
-              <SquareCheck v-if="voted === option" :size="19" fill="currentColor" />
+              <SquareCheck v-if="voted === option" :size="19" />
               <span v-else class="size-5 rounded-full border-2 border-slate-400" />
             </button>
           </div>
@@ -253,6 +262,112 @@ function removeMember(memberId: number) {
     </div>
 
     <Transition name="modal-fade">
+      <div v-if="showOrderModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
+        <section class="modal-panel w-full max-w-lg rounded-2xl bg-white p-4 shadow-2xl sm:p-5">
+          <div class="mb-3 flex items-start justify-between gap-4">
+            <div>
+              <h2 class="flex items-center gap-2 text-lg font-black text-slate-950">
+                <ListOrdered :size="20" class="text-brand-500" />
+                일정 순서 확인
+              </h2>
+              <p class="mt-1 text-xs font-semibold text-slate-500">등록된 장소와 시간을 날짜별로 확인합니다.</p>
+            </div>
+            <button class="text-slate-500" aria-label="닫기" @click="showOrderModal = false">
+              <X :size="20" />
+            </button>
+          </div>
+
+          <div class="max-h-[56vh] overflow-y-auto pr-1">
+            <section v-for="group in scheduleGroups" :key="group.date" class="pb-6 last:pb-0">
+              <div class="mb-3 flex items-center gap-2">
+                <span class="grid size-8 place-items-center rounded-full bg-brand-500 text-white shadow-sm shadow-indigo-200">
+                  <CalendarCheck :size="16" />
+                </span>
+                <h3 class="text-lg font-black text-brand-500">{{ group.date }}</h3>
+              </div>
+
+              <div class="relative ml-4 border-l-2 border-slate-200 pl-4 sm:ml-4 sm:pl-5">
+                <article v-for="item in group.items" :key="item.id" class="relative mb-3 last:mb-0">
+                  <span class="absolute -left-[25px] top-6 size-4 rounded-full border-[3px] border-white bg-brand-500 shadow-sm sm:-left-[29px]" />
+                  <div class="grid gap-2 sm:grid-cols-[92px_1fr]">
+                    <p class="pt-5 text-xs font-bold text-slate-400">{{ item.time }}</p>
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p class="flex items-center gap-1.5 text-xs font-black text-brand-500">
+                            <span class="size-1.5 rounded-full bg-violet-500" />
+                            {{ item.category }}
+                          </p>
+                          <h4 class="mt-1.5 text-base font-black text-slate-950">{{ item.title }}</h4>
+                          <p class="mt-1 text-xs font-bold leading-5 text-slate-500">{{ item.note }} / {{ item.location }}</p>
+                        </div>
+                        <button
+                          class="grid size-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-slate-100 hover:text-slate-600"
+                          :aria-label="`${item.title} 삭제`"
+                          @click="requestRemoveScheduleItem(item)"
+                        >
+                          <Trash2 :size="15" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              </div>
+            </section>
+          </div>
+
+          <div class="mt-3 grid gap-2 rounded-xl bg-brand-50 p-3 text-xs font-bold leading-5 text-brand-700 sm:grid-cols-3">
+            <div>
+              <span class="block text-[11px] font-black text-brand-500">총 일정</span>
+              {{ scheduleItems.length }}개
+            </div>
+            <div>
+              <span class="block text-[11px] font-black text-brand-500">첫 일정</span>
+              {{ scheduleItems[0]?.date ?? '날짜 미정' }} · {{ scheduleItems[0]?.time ?? '미정' }}
+            </div>
+            <div>
+              <span class="block text-[11px] font-black text-brand-500">마지막 일정</span>
+              {{ scheduleItems[scheduleItems.length - 1]?.date ?? '날짜 미정' }} · {{ scheduleItems[scheduleItems.length - 1]?.time ?? '미정' }}
+            </div>
+          </div>
+
+          <div class="mt-4 flex justify-end gap-2">
+            <button class="h-10 rounded-lg bg-slate-100 px-4 text-sm font-black text-slate-700" @click="showOrderModal = false">
+              닫기
+            </button>
+          </div>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="modal-fade">
+      <div v-if="deleteScheduleTarget" class="fixed inset-0 z-[90] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
+        <section class="modal-panel w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
+          <div class="mb-4 flex items-center justify-between">
+            <h2 class="text-xl font-black text-slate-950">일정을 삭제하시겠습니까?</h2>
+            <button class="text-slate-500" aria-label="닫기" @click="deleteScheduleTarget = null">
+              <X :size="22" />
+            </button>
+          </div>
+          <p class="text-sm font-semibold leading-6 text-slate-600">
+            <span class="font-black text-slate-950">{{ deleteScheduleTarget.title }}</span> 항목을 전체 일정에서 삭제합니다.
+          </p>
+          <p class="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs font-bold text-slate-500">
+            확인을 누르면 이 항목이 현재 일정에서 제거됩니다.
+          </p>
+          <div class="mt-5 flex justify-end gap-2">
+            <button class="h-10 rounded-lg bg-slate-100 px-4 text-sm font-black text-slate-700" @click="deleteScheduleTarget = null">
+              취소
+            </button>
+            <button class="btn-primary h-10 rounded-lg px-4 text-sm" @click="confirmRemoveScheduleItem">
+              확인
+            </button>
+          </div>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="modal-fade">
       <div v-if="showMemberModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
         <section class="modal-panel w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
           <div class="mb-4 flex items-center justify-between">
@@ -271,11 +386,14 @@ function removeMember(memberId: number) {
                 <p class="font-black text-slate-950">{{ member.name }}</p>
                 <p class="truncate text-xs font-semibold text-slate-500">{{ member.email }}</p>
               </div>
-              <select v-model="member.role" class="brand-input h-9 rounded-lg px-2 text-xs font-bold outline-none" :disabled="member.owner">
-                <option>소유자</option>
-                <option>편집 가능</option>
-                <option>보기만 가능</option>
-              </select>
+              <span class="select-wrap">
+                <select v-model="member.role" class="brand-input select-control h-9 rounded-lg px-2 text-xs font-bold outline-none" :disabled="member.owner">
+                  <option>소유자</option>
+                  <option>편집 가능</option>
+                  <option>보기만 가능</option>
+                </select>
+                <ChevronDown :size="14" class="select-chevron" />
+              </span>
               <button v-if="!member.owner" class="rounded-lg bg-red-50 px-3 py-2 text-xs font-black text-red-500 hover:bg-red-100" @click="removeMember(member.id)">
                 내보내기
               </button>
@@ -304,10 +422,13 @@ function removeMember(memberId: number) {
             </label>
             <label class="block">
               <span class="mb-1.5 block text-xs font-black text-slate-950">권한</span>
-              <select v-model="inviteDraft.role" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none">
-                <option>편집 가능</option>
-                <option>보기만 가능</option>
-              </select>
+              <span class="select-wrap select-wrap-full">
+                <select v-model="inviteDraft.role" class="brand-input select-control h-10 w-full rounded-lg px-3 text-sm outline-none">
+                  <option>편집 가능</option>
+                  <option>보기만 가능</option>
+                </select>
+                <ChevronDown :size="15" class="select-chevron" />
+              </span>
             </label>
             <label class="block">
               <span class="mb-1.5 block text-xs font-black text-slate-950">초대 메시지</span>

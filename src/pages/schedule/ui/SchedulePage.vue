@@ -92,7 +92,7 @@ function confirmDeleteTrip() {
           지난 일정 ({{ localTrips.filter((trip) => trip.phase === 'past').length }})
         </button>
       </div>
-      <div class="flex gap-2">
+      <div class="flex flex-wrap justify-start gap-2 sm:justify-end">
         <button class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-3.5 py-2 text-xs font-black text-slate-700 hover:bg-slate-200" @click="manageMode = !manageMode">
           <MoreHorizontal :size="15" />
           {{ manageMode ? '관리 종료' : '일정 관리' }}
