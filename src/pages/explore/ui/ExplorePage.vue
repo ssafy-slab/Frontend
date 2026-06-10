@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ChevronDown, Crosshair, Heart, Minus, Plus, Search, Star, X } from 'lucide-vue-next'
+import { ChevronDown, Heart, Search, Star, X } from 'lucide-vue-next'
 import { computed, reactive, ref } from 'vue'
 import { places, trips } from '@/entities/travel/model/travel'
 import type { Place } from '@/entities/travel/model/travel'
+import KakaoMap from '@/shared/ui/KakaoMap.vue'
 
 const selectedPlaceId = ref(places[0]?.id ?? 0)
 const likedIds = ref(new Set(places.filter((place) => place.liked).map((place) => place.id)))
@@ -18,6 +19,14 @@ const addDraft = reactive({
 })
 
 const selectedPlace = computed(() => places.find((place) => place.id === selectedPlaceId.value) ?? places[0])
+const mapMarkers = computed(() =>
+  places.map((place) => ({
+    id: place.id,
+    title: place.title,
+    position: place.coordinates,
+  })),
+)
+const mapCenter = computed(() => selectedPlace.value?.coordinates ?? places[0]?.coordinates ?? { lat: 37.5665, lng: 126.978 })
 
 const emit = defineEmits<{
   openPlace: [place: Place]
@@ -129,35 +138,17 @@ function addToTrip() {
 
         <div class="relative h-[360px] overflow-hidden bg-[#f5f1e8] lg:h-auto">
           <div class="absolute left-4 top-4 z-10 rounded-lg bg-white/95 px-3 py-2 text-xs font-black text-slate-700 shadow-sm">
-            Kakao Map 연동 예정
+            Kakao Map
           </div>
 
-          <div class="absolute inset-0 kakao-map-mock">
-            <div class="absolute left-[10%] top-[18%] h-20 w-36 rounded-[45%] bg-emerald-100/90" />
-            <div class="absolute right-[13%] top-[16%] h-28 w-44 rounded-[45%] bg-emerald-100/80" />
-            <div class="absolute bottom-[12%] left-[18%] h-28 w-52 rounded-[45%] bg-sky-100/80" />
-            <div class="absolute left-[18%] top-[48%] h-3 w-[76%] -rotate-12 rounded-full bg-white shadow-sm" />
-            <div class="absolute left-[8%] top-[38%] h-3 w-[72%] rotate-[22deg] rounded-full bg-white shadow-sm" />
-            <div class="absolute left-[46%] top-[10%] h-[78%] w-3 rotate-[6deg] rounded-full bg-white shadow-sm" />
-            <div class="absolute left-[25%] top-[28%] h-2 w-[46%] -rotate-[36deg] rounded-full bg-amber-200" />
-          </div>
-
-          <button
-            v-for="place in places"
-            :key="place.id"
-            class="absolute -translate-x-1/2 -translate-y-full text-brand-500 drop-shadow-lg transition"
-            :class="selectedPlaceId === place.id ? 'scale-125' : ''"
-            :style="{ top: place.marker.top, left: place.marker.left }"
-            :aria-label="`${place.title} 지도 마커`"
-            @click="selectedPlaceId = place.id"
-          >
-            <span class="relative block">
-              <span class="absolute left-1/2 top-2 z-10 size-3 -translate-x-1/2 rounded-full border border-white/80 bg-white shadow-sm" />
-              <svg viewBox="0 0 48 64" class="relative h-11 w-9 fill-current">
-                <path d="M24 0C10.9 0 0 10.7 0 24c0 18 24 40 24 40s24-22 24-40C48 10.7 37.1 0 24 0Z" />
-              </svg>
-            </span>
-          </button>
+          <KakaoMap
+            class="absolute inset-0"
+            :center="mapCenter"
+            :markers="mapMarkers"
+            :selected-marker-id="selectedPlaceId"
+            :level="8"
+            @marker-click="selectedPlaceId = Number($event.id)"
+          />
 
           <section
             v-if="selectedPlace"
@@ -177,17 +168,6 @@ function addToTrip() {
             </div>
           </section>
 
-          <div class="absolute bottom-4 right-4 flex flex-col gap-2">
-            <button class="grid size-10 place-items-center rounded-lg bg-white text-slate-950 shadow-lg" aria-label="확대">
-              <Plus :size="21" />
-            </button>
-            <button class="grid size-10 place-items-center rounded-lg bg-white text-slate-950 shadow-lg" aria-label="축소">
-              <Minus :size="21" />
-            </button>
-            <button class="grid size-10 place-items-center rounded-lg bg-white text-brand-500 shadow-lg" aria-label="현재 위치">
-              <Crosshair :size="21" />
-            </button>
-          </div>
         </div>
       </div>
     </div>

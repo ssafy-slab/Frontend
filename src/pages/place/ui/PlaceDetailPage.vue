@@ -3,6 +3,7 @@ import { CalendarPlus, ChevronDown, CloudSun, Heart, Map, MessageSquareText, Sha
 import { computed, reactive, ref } from 'vue'
 import { trips } from '@/entities/travel/model/travel'
 import type { Place } from '@/entities/travel/model/travel'
+import KakaoMap from '@/shared/ui/KakaoMap.vue'
 
 const props = defineProps<{
   place: Place | null
@@ -29,6 +30,17 @@ const reviews = ref([
 ])
 
 const displayPlace = computed(() => props.place)
+const mapMarkers = computed(() =>
+  displayPlace.value
+    ? [
+        {
+          id: displayPlace.value.id,
+          title: displayPlace.value.title,
+          position: displayPlace.value.coordinates,
+        },
+      ]
+    : [],
+)
 
 function addReview() {
   const text = review.value.trim()
@@ -232,21 +244,14 @@ function submitAddPlace() {
               <X :size="22" />
             </button>
           </div>
-          <div class="relative h-[360px] overflow-hidden bg-[#f5f1e8] kakao-map-mock">
-            <div class="absolute left-[12%] top-[18%] h-20 w-40 rounded-[45%] bg-emerald-100/90" />
-            <div class="absolute right-[12%] top-[16%] h-28 w-44 rounded-[45%] bg-emerald-100/80" />
-            <div class="absolute bottom-[12%] left-[18%] h-28 w-52 rounded-[45%] bg-sky-100/80" />
-            <div class="absolute left-[15%] top-[44%] h-3 w-[74%] -rotate-12 rounded-full bg-white shadow-sm" />
-            <div class="absolute left-[8%] top-[38%] h-3 w-[70%] rotate-[22deg] rounded-full bg-white shadow-sm" />
-            <div class="absolute left-[46%] top-[10%] h-[78%] w-3 rotate-[6deg] rounded-full bg-white shadow-sm" />
-            <div class="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-full text-brand-500 drop-shadow-lg">
-              <span class="relative block">
-                <span class="absolute left-1/2 top-2 z-10 size-3 -translate-x-1/2 rounded-full border border-white/80 bg-white shadow-sm" />
-                <svg viewBox="0 0 48 64" class="relative h-12 w-10 fill-current">
-                  <path d="M24 0C10.9 0 0 10.7 0 24c0 18 24 40 24 40s24-22 24-40C48 10.7 37.1 0 24 0Z" />
-                </svg>
-              </span>
-            </div>
+          <div class="relative h-[360px] overflow-hidden bg-slate-100">
+            <KakaoMap
+              class="absolute inset-0"
+              :center="displayPlace.coordinates"
+              :markers="mapMarkers"
+              :selected-marker-id="displayPlace.id"
+              :level="4"
+            />
             <div class="absolute bottom-4 left-4 right-4 rounded-xl bg-white/95 p-4 shadow-lg backdrop-blur">
               <p class="text-xs font-black text-brand-500">{{ displayPlace.category }}</p>
               <h3 class="mt-1 text-base font-black text-slate-950">{{ displayPlace.title }}</h3>

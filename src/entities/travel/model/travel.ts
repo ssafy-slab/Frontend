@@ -14,6 +14,10 @@ export type Place = {
     top: string
     left: string
   }
+  coordinates: {
+    lat: number
+    lng: number
+  }
 }
 
 export type Trip = {
@@ -53,6 +57,7 @@ export const places: Place[] = [
     reviewCount: '2,130',
     tags: ['#오션뷰', '#디저트', '#주차가능'],
     marker: { top: '30%', left: '29%' },
+    coordinates: { lat: 33.5565, lng: 126.7959 },
   },
   {
     id: 2,
@@ -66,6 +71,7 @@ export const places: Place[] = [
     tags: ['#흑돼지', '#웨이팅필수'],
     liked: true,
     marker: { top: '42%', left: '48%' },
+    coordinates: { lat: 33.5116, lng: 126.526 },
   },
   {
     id: 3,
@@ -78,6 +84,7 @@ export const places: Place[] = [
     reviewCount: '8,900',
     tags: ['#자연경관', '#유네스코'],
     marker: { top: '54%', left: '68%' },
+    coordinates: { lat: 33.458, lng: 126.9425 },
   },
   {
     id: 4,
@@ -91,6 +98,7 @@ export const places: Place[] = [
     tags: ['#한옥', '#산책'],
     aiPick: true,
     marker: { top: '62%', left: '82%' },
+    coordinates: { lat: 37.5826, lng: 126.983 },
   },
 ]
 

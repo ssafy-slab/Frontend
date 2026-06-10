@@ -3,7 +3,7 @@ import { computed, nextTick, reactive, ref } from 'vue'
 import { Bot, CalendarCheck, ChevronDown, Link, ListOrdered, MapPin, Plus, Send, SquareCheck, Trash2, UserCog, X } from 'lucide-vue-next'
 import type { Trip } from '@/entities/travel/model/travel'
 
-const props = defineProps<{
+defineProps<{
   trip: Trip | null
 }>()
 
