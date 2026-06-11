@@ -25,6 +25,18 @@ See [Vite Configuration Reference](https://vite.dev/config/).
 
 ## Project Setup
 
+### Environment Variables
+
+Copy `.env.example` to `.env` and fill in your Kakao JavaScript app key.
+
+```sh
+cp .env.example .env
+```
+
+```env
+VITE_KAKAO_MAP_APP_KEY=your_kakao_javascript_app_key
+```
+
 ```sh
 pnpm install
 ```
