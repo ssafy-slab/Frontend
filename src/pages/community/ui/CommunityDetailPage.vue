@@ -1,12 +1,51 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Copy, Heart, Map, User } from 'lucide-vue-next'
+import { computed, reactive, ref } from 'vue'
+import { CheckCircle2, ChevronDown, Copy, Heart, Map, User, X } from 'lucide-vue-next'
+import { trips } from '@/entities/travel/model/travel'
+import KakaoMap from '@/shared/ui/KakaoMap.vue'
 
 const emit = defineEmits<{
   change: [view: string]
+  saved: [message: string]
 }>()
 
 const liked = ref(false)
+const showMapModal = ref(false)
+const showCopyModal = ref(false)
+
+const featuredPlace = {
+  id: 'bijarim',
+  title: '천년의 숲 비자림',
+  category: '관광명소',
+  location: '제주시 구좌읍 비자숲길 55',
+  image: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=400&q=80',
+  coordinates: { lat: 33.4912, lng: 126.8114 },
+}
+const courseItems = [
+  { day: '1일차', title: '애월 카페거리', time: '15:00', location: '제주시 애월읍' },
+  { day: '2일차', title: featuredPlace.title, time: '10:00', location: featuredPlace.location },
+  { day: '2일차', title: '성산일출봉', time: '14:00', location: '제주 서귀포시' },
+]
+const upcomingTrips = computed(() => trips.filter((trip) => trip.phase === 'upcoming'))
+const mapMarkers = computed(() => [
+  {
+    id: featuredPlace.id,
+    title: featuredPlace.title,
+    position: featuredPlace.coordinates,
+  },
+])
+const copyDraft = reactive({
+  tripId: String(upcomingTrips.value[0]?.id ?? ''),
+  startDate: '2024-11-15',
+  firstTime: '10:00',
+  memo: '커뮤니티 추천 코스에서 복사',
+})
+
+function confirmCopyToSchedule() {
+  const targetTrip = trips.find((trip) => String(trip.id) === copyDraft.tripId)
+  showCopyModal.value = false
+  emit('saved', `추천 코스를 ${targetTrip?.title ?? '선택한 일정'}에 복사했습니다.`)
+}
 </script>
 
 <template>
@@ -43,7 +82,7 @@ const liked = ref(false)
           <div>
             <h3 class="font-black text-slate-950">천년의 숲 비자림</h3>
             <p class="mt-2 text-sm text-slate-500">제주시 구좌읍 비자숲길 55</p>
-            <button class="mt-3 inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-black text-slate-950">
+            <button class="mt-3 inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-black text-slate-950" @click="showMapModal = true">
               <Map :size="15" />
               지도 보기
             </button>
@@ -60,7 +99,7 @@ const liked = ref(false)
           <Heart :size="16" :fill="liked ? 'currentColor' : 'none'" />
           좋아요 {{ liked ? 125 : 124 }}
         </button>
-        <button class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-5 py-3 text-sm font-black text-slate-800">
+        <button class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-5 py-3 text-sm font-black text-slate-800" @click="showCopyModal = true">
           <Copy :size="16" />
           내 일정으로 복사하기
         </button>
@@ -97,5 +136,105 @@ const liked = ref(false)
         </div>
       </section>
     </article>
+
+    <Transition name="modal-fade">
+      <div v-if="showMapModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
+        <section class="modal-panel w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div class="flex items-center justify-between border-b border-slate-200 p-4">
+            <div>
+              <h2 class="text-lg font-black text-slate-950">지도 보기</h2>
+              <p class="mt-1 text-xs font-bold text-slate-500">{{ featuredPlace.title }} · {{ featuredPlace.location }}</p>
+            </div>
+            <button class="text-slate-500" aria-label="닫기" @click="showMapModal = false">
+              <X :size="22" />
+            </button>
+          </div>
+          <div class="relative h-[360px] overflow-hidden bg-slate-100">
+            <KakaoMap
+              class="absolute inset-0"
+              :center="featuredPlace.coordinates"
+              :markers="mapMarkers"
+              :selected-marker-id="featuredPlace.id"
+              :level="4"
+            />
+            <div class="absolute bottom-4 left-4 right-4 rounded-xl bg-white/95 p-4 shadow-lg backdrop-blur">
+              <p class="text-xs font-black text-brand-500">{{ featuredPlace.category }}</p>
+              <h3 class="mt-1 text-base font-black text-slate-950">{{ featuredPlace.title }}</h3>
+              <p class="mt-1 text-xs font-bold text-slate-500">{{ featuredPlace.location }}</p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="modal-fade">
+      <div v-if="showCopyModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
+        <section class="modal-panel w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
+          <div class="mb-4 flex items-start justify-between gap-4">
+            <div>
+              <h2 class="flex items-center gap-2 text-xl font-black text-slate-950">
+                <Copy :size="20" class="text-brand-500" />
+                내 일정으로 복사하기
+              </h2>
+              <p class="mt-1 text-sm font-semibold text-slate-500">커뮤니티 추천 코스를 내 여행 일정 초안으로 가져옵니다.</p>
+            </div>
+            <button class="text-slate-500" aria-label="닫기" @click="showCopyModal = false">
+              <X :size="22" />
+            </button>
+          </div>
+
+          <div class="rounded-xl bg-slate-50 p-4">
+            <h3 class="mb-3 text-sm font-black text-slate-950">복사될 코스</h3>
+            <div class="space-y-2">
+              <article v-for="item in courseItems" :key="`${item.day}-${item.title}`" class="flex gap-3 rounded-lg bg-white p-3">
+                <span class="grid h-8 min-w-12 place-items-center rounded-md bg-brand-50 text-xs font-black text-brand-500">{{ item.day }}</span>
+                <div class="min-w-0">
+                  <p class="text-sm font-black text-slate-950">{{ item.time }} {{ item.title }}</p>
+                  <p class="mt-1 text-xs font-bold text-slate-500">{{ item.location }}</p>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div class="mt-4 grid gap-3">
+            <label class="block">
+              <span class="mb-1.5 block text-xs font-black text-slate-950">복사할 일정</span>
+              <span class="select-wrap select-wrap-full">
+                <select v-model="copyDraft.tripId" class="brand-input select-control h-10 w-full rounded-lg px-3 text-sm outline-none">
+                  <option v-for="trip in upcomingTrips" :key="trip.id" :value="String(trip.id)">
+                    {{ trip.title }}
+                  </option>
+                </select>
+                <ChevronDown :size="15" class="select-chevron" />
+              </span>
+            </label>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <label class="block">
+                <span class="mb-1.5 block text-xs font-black text-slate-950">시작일</span>
+                <input v-model="copyDraft.startDate" type="date" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" />
+              </label>
+              <label class="block">
+                <span class="mb-1.5 block text-xs font-black text-slate-950">첫 방문 시간</span>
+                <input v-model="copyDraft.firstTime" type="time" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" />
+              </label>
+            </div>
+            <label class="block">
+              <span class="mb-1.5 block text-xs font-black text-slate-950">메모</span>
+              <input v-model="copyDraft.memo" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" />
+            </label>
+          </div>
+
+          <div class="mt-5 grid gap-2 sm:grid-cols-2">
+            <button class="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm" @click="confirmCopyToSchedule">
+              <CheckCircle2 :size="17" />
+              복사하기
+            </button>
+            <button class="inline-flex h-10 items-center justify-center rounded-lg bg-slate-100 px-4 text-sm font-black text-slate-700" @click="showCopyModal = false">
+              닫기
+            </button>
+          </div>
+        </section>
+      </div>
+    </Transition>
   </section>
 </template>

@@ -103,7 +103,7 @@ function handleLogout() {
       <ScheduleDetailPage v-else-if="activeView === 'schedule-detail'" key="schedule-detail" :trip="selectedTrip" @change="changeView" @saved="showToast" />
       <CommunityPage v-else-if="activeView === 'community'" key="community" :posts="communityPosts" @change="changeView" />
       <CommunityEditorPage v-else-if="activeView === 'community-write'" key="community-write" @change="changeView" @create-post="addPost" />
-      <CommunityDetailPage v-else-if="activeView === 'community-detail'" key="community-detail" @change="changeView" />
+      <CommunityDetailPage v-else-if="activeView === 'community-detail'" key="community-detail" @change="changeView" @saved="showToast" />
       <ProfilePage v-else-if="activeView === 'profile'" key="profile" :current-user="currentUser" @change="changeView" />
       <AuthPage v-else key="auth" :mode="authMode" @change="changeView" @authenticated="handleLogin" />
     </Transition>
