@@ -160,10 +160,21 @@ function submitAddPlace() {
             </p>
           </div>
         </section>
-        <section class="brand-card h-64 cursor-pointer rounded-2xl bg-sky-100 p-5" @click="showMapModal = true">
-          <p class="w-fit rounded-full bg-white px-3 py-1.5 text-xs font-black text-slate-700">위치 지도</p>
-          <div class="mt-8 grid h-36 place-items-center rounded-xl bg-white/60 text-sm font-black text-brand-500">
-            {{ displayPlace.location }}
+        <section class="brand-card relative h-72 cursor-pointer overflow-hidden rounded-2xl p-0" @click="showMapModal = true">
+          <KakaoMap
+            class="pointer-events-none absolute inset-0"
+            :center="displayPlace.coordinates"
+            :markers="mapMarkers"
+            :selected-marker-id="displayPlace.id"
+            :level="5"
+          />
+          <p class="absolute left-4 top-4 z-10 w-fit rounded-full bg-white/95 px-3 py-1.5 text-xs font-black text-slate-700 shadow-sm">
+            위치 지도
+          </p>
+          <div class="absolute bottom-4 left-4 right-4 z-10 rounded-xl bg-white/95 p-4 shadow-lg backdrop-blur">
+            <p class="text-xs font-black text-brand-500">{{ displayPlace.category }}</p>
+            <h3 class="mt-1 text-base font-black text-slate-950">{{ displayPlace.title }}</h3>
+            <p class="mt-1 text-xs font-bold text-slate-500">{{ displayPlace.location }}</p>
           </div>
         </section>
       </aside>
