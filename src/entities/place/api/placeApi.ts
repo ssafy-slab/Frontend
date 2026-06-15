@@ -42,6 +42,8 @@ type PlaceApiItem = {
   imageUrl: string | null
   thumbnailUrl: string | null
   displayImageUrl: string | null
+  thumbnailImageUrl: string | null
+  detailImageUrl: string | null
 }
 
 type PlacePageApiResponse = {
@@ -89,8 +91,8 @@ function displayCategory(category: string | null) {
 }
 
 function toPlace(item: PlaceApiItem): Place {
-  const image = item.displayImageUrl || item.thumbnailUrl || item.imageUrl || defaultPlaceImage
-  const normalizedImage = image.startsWith('/') ? image : image
+  const thumbnailImage = item.thumbnailImageUrl || item.displayImageUrl || item.thumbnailUrl || item.imageUrl || defaultPlaceImage
+  const detailImage = item.detailImageUrl || item.imageUrl || item.displayImageUrl || item.thumbnailUrl || defaultPlaceImage
 
   return {
     id: item.placeId,
@@ -99,7 +101,9 @@ function toPlace(item: PlaceApiItem): Place {
     category: displayCategory(item.category),
     rawCategory: item.category || '',
     description: item.description || item.address || '등록된 설명이 없습니다.',
-    image: normalizedImage,
+    image: thumbnailImage,
+    thumbnailImage,
+    detailImage,
     rating: 0,
     reviewCount: '0',
     tags: [displayCategory(item.category), item.regionName].filter(Boolean),

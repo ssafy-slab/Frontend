@@ -4,6 +4,7 @@ import { computed, reactive, ref } from 'vue'
 import { trips } from '@/entities/travel/model/travel'
 import type { Place } from '@/entities/travel/model/travel'
 import KakaoMap from '@/shared/ui/KakaoMap.vue'
+import SafeImage from '@/shared/ui/SafeImage.vue'
 
 const props = defineProps<{
   place: Place | null
@@ -77,7 +78,7 @@ function submitAddPlace() {
     <article class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div class="grid gap-0 lg:grid-cols-[1.05fr_0.95fr]">
         <div class="relative h-72 overflow-hidden bg-slate-200 sm:h-96 lg:h-[460px]">
-          <img :src="displayPlace.image" :alt="displayPlace.title" class="h-full w-full object-cover transition duration-700 hover:scale-105" />
+          <SafeImage :src="displayPlace.detailImage || displayPlace.image" :alt="displayPlace.title" class="h-full w-full object-cover transition duration-700 hover:scale-105" />
           <button
             class="absolute right-5 top-5 grid size-11 place-items-center rounded-full bg-white/90 text-slate-400 shadow-md backdrop-blur transition hover:text-red-500"
             :class="liked ? 'text-red-500' : ''"

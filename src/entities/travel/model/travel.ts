@@ -6,6 +6,8 @@ export type Place = {
   rawCategory?: string
   description: string
   image: string
+  thumbnailImage?: string
+  detailImage?: string
   rating: number
   reviewCount: string
   tags: string[]

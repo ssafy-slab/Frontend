@@ -6,6 +6,7 @@ import type { PlaceCategory, RegionFilter } from '@/entities/place/api/placeApi'
 import { trips } from '@/entities/travel/model/travel'
 import type { Place } from '@/entities/travel/model/travel'
 import KakaoMap from '@/shared/ui/KakaoMap.vue'
+import SafeImage from '@/shared/ui/SafeImage.vue'
 
 const pageSize = 20
 const selectedPlaceId = ref<number | null>(null)
@@ -259,7 +260,7 @@ onMounted(async () => {
             @mouseenter="selectedPlaceId = place.id"
             @click="emit('openPlace', place)"
           >
-            <img :src="place.image" :alt="place.title" class="size-19 rounded-lg object-cover" />
+            <SafeImage :src="place.thumbnailImage || place.image" :alt="place.title" class="size-19 rounded-lg object-cover" />
             <div class="min-w-0">
               <h3 class="truncate text-base font-black text-slate-950">{{ place.title }}</h3>
               <p class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs font-bold text-slate-500">
