@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CalendarPlus, ChevronDown, CloudSun, Droplets, Fuel, Heart, LoaderCircle, Map, MessageSquareText, Pill, Share2, Star, Store, Thermometer, Umbrella, Vote, Wind, X } from 'lucide-vue-next'
+import { CalendarPlus, ChevronDown, Clock3, CloudSun, Droplets, Fuel, Heart, LoaderCircle, Map, MessageSquareText, Pill, Share2, Star, Store, Thermometer, Umbrella, Vote, Wind, X } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
 import { fetchPlaceNearbyFacilities, fetchPlaceWeather } from '@/entities/place/api/placeApi'
 import type { NearbyFacilitiesResponse, NearbyFacilityType, PlaceWeather } from '@/entities/place/api/placeApi'
@@ -83,6 +83,11 @@ const weatherItems = computed(() => {
   ].filter((item) => item.value)
 })
 
+const weatherForecasts = computed(() => {
+  if (!weather.value?.available) return []
+  return (weather.value.forecasts ?? []).slice(0, 6)
+})
+
 const nearbyFacilityTypes: {
   type: NearbyFacilityType
   label: string
@@ -127,6 +132,82 @@ function formatPercent(value: number | null) {
 function formatWind(value: number | string | null) {
   const formatted = formatNumber(value)
   return formatted ? `${formatted}m/s` : null
+}
+
+function formatForecastTime(value: string | null) {
+  if (!value) return '시간 미정'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('ko-KR', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function normalizeWeatherCode(value: string | number | null) {
+  if (value === null) return null
+  return String(value).trim().toUpperCase().replace(/[\s-]+/g, '_')
+}
+
+function displaySkyStatus(value: string | number | null) {
+  const labels: Record<string, string> = {
+    '1': '맑음',
+    '3': '구름많음',
+    '4': '흐림',
+    CLEAR: '맑음',
+    SUNNY: '맑음',
+    SKY_1: '맑음',
+    MOSTLY_CLOUDY: '구름많음',
+    PARTLY_CLOUDY: '구름많음',
+    SKY_3: '구름많음',
+    CLOUDY: '흐림',
+    OVERCAST: '흐림',
+    SKY_4: '흐림',
+  }
+  const normalized = normalizeWeatherCode(value)
+  return normalized ? labels[normalized] ?? String(value) : null
+}
+
+function displayPrecipitationType(value: string | number | null) {
+  const labels: Record<string, string> = {
+    '0': '없음',
+    '1': '비',
+    '2': '비/눈',
+    '3': '눈',
+    '4': '소나기',
+    '5': '빗방울',
+    '6': '빗방울눈날림',
+    '7': '눈날림',
+    NONE: '없음',
+    PTY_0: '없음',
+    RAIN: '비',
+    PTY_1: '비',
+    RAIN_SNOW: '비/눈',
+    SLEET: '비/눈',
+    PTY_2: '비/눈',
+    SNOW: '눈',
+    PTY_3: '눈',
+    SHOWER: '소나기',
+    SHOWERS: '소나기',
+    PTY_4: '소나기',
+    RAINDROP: '빗방울',
+    DRIZZLE: '빗방울',
+    PTY_5: '빗방울',
+    RAINDROP_SNOW_FLURRY: '빗방울눈날림',
+    RAIN_DROP_SNOW_FLURRY: '빗방울눈날림',
+    PTY_6: '빗방울눈날림',
+    SNOW_FLURRY: '눈날림',
+    PTY_7: '눈날림',
+  }
+  const normalized = normalizeWeatherCode(value)
+  return normalized ? labels[normalized] ?? String(value) : null
+}
+
+function displayWeatherState(skyStatus: string | number | null, precipitationType: string | number | null) {
+  const precipitation = displayPrecipitationType(precipitationType)
+  return [displaySkyStatus(skyStatus), precipitation && precipitation !== '없음' ? precipitation : null].filter(Boolean).join(' · ') || '맑음'
 }
 
 function toDistance(value: number | string | null) {
@@ -308,7 +389,7 @@ watch(
             <p v-if="weather.skyStatus || weather.precipitationType" class="rounded-lg bg-brand-50 px-3 py-2">
               <span class="block text-xs font-black text-brand-500">현재 상태</span>
               <span class="mt-1 block font-black text-slate-900">
-                {{ [weather.skyStatus, weather.precipitationType && weather.precipitationType !== '없음' ? weather.precipitationType : null].filter(Boolean).join(' · ') || '맑음' }}
+                {{ displayWeatherState(weather.skyStatus, weather.precipitationType) }}
               </span>
             </p>
             <p v-for="item in weatherItems" :key="item.label" class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
@@ -322,6 +403,27 @@ watch(
               <span class="inline-flex items-center gap-2 font-bold text-slate-500"><Umbrella :size="16" /> 1시간 강수량</span>
               <span class="font-black text-slate-800">{{ weather.precipitationOneHour }}</span>
             </p>
+            <div v-if="weatherForecasts.length" class="mt-1 grid gap-2">
+              <h3 class="flex items-center gap-2 pt-2 text-sm font-black text-slate-950">
+                <Clock3 :size="16" class="text-brand-500" />
+                시간대별 단기예보
+              </h3>
+              <article v-for="forecast in weatherForecasts" :key="forecast.forecastAt ?? `${forecast.temperature}-${forecast.updatedAt}`" class="rounded-lg border border-slate-200 bg-white px-3 py-3">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <p class="text-xs font-black text-brand-500">{{ formatForecastTime(forecast.forecastAt) }}</p>
+                    <p class="mt-1 truncate font-black text-slate-900">{{ displayWeatherState(forecast.skyStatus, forecast.precipitationType) }}</p>
+                  </div>
+                  <span class="shrink-0 text-base font-black text-slate-950">{{ formatTemperature(forecast.temperature) ?? '-' }}</span>
+                </div>
+                <div class="mt-2 grid grid-cols-3 gap-2 text-[11px] font-bold text-slate-500">
+                  <span>강수 {{ formatPercent(forecast.precipitationProbability) ?? '-' }}</span>
+                  <span>습도 {{ formatPercent(forecast.humidity) ?? '-' }}</span>
+                  <span>풍속 {{ formatWind(forecast.windSpeed) ?? '-' }}</span>
+                </div>
+                <p v-if="forecast.precipitationOneHour" class="mt-2 text-[11px] font-bold text-slate-500">1시간 강수량 {{ forecast.precipitationOneHour }}</p>
+              </article>
+            </div>
           </div>
           <div v-else class="rounded-lg bg-slate-50 p-4 text-sm font-bold leading-6 text-slate-500">
             {{ weatherMessage || '날씨 정보를 불러올 수 없습니다.' }}

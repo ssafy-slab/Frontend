@@ -1,6 +1,6 @@
 {
-  "last_turn_at": "2026-06-15T10:44:45.546Z",
-  "turn_count": 6,
-  "last_progress_at": "2026-06-15T10:44:45.546Z",
-  "last_agent_output": "가능해서 바로 바꿨습니다.\n\n이제 주변시설 호출에서 `radiusM: 200`을 빼서 서버 기본 반경으로 조회하고, 프론트에서 각 타입별 `distanceM` 기준 가장 가까운 시"
+  "last_turn_at": "2026-06-15T11:06:04.057Z",
+  "turn_count": 9,
+  "last_progress_at": "2026-06-15T11:06:04.057Z",
+  "last_agent_output": "반영했습니다. 이제 날씨 상태가 숫자 코드든 문자열 enum이든 화면에서는 한글로 표시됩니다.\n\n지원하는 값:\n- `1`, `CLEAR`, `SUNNY`, `SKY_1` → `맑음"
 }

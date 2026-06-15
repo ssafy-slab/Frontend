@@ -28,18 +28,23 @@ export type PlaceSearchParams = {
   size?: number
 }
 
-export type PlaceWeather = {
-  available: boolean
-  message: string | null
+export type PlaceWeatherForecast = {
   temperature: number | string | null
-  feelsLikeTemperature: number | string | null
   precipitationProbability: number | null
   humidity: number | null
   windSpeed: number | string | null
-  precipitationType: string | null
-  skyStatus: string | null
+  precipitationType: string | number | null
+  skyStatus: string | number | null
   precipitationOneHour: string | null
+  forecastAt: string | null
   updatedAt: string | null
+}
+
+export type PlaceWeather = PlaceWeatherForecast & {
+  available: boolean
+  message: string | null
+  feelsLikeTemperature: number | string | null
+  forecasts: PlaceWeatherForecast[]
 }
 
 export type NearbyFacilityType = 'GAS_STATION' | 'PHARMACY' | 'CONVENIENCE_STORE'
