@@ -28,6 +28,20 @@ export type PlaceSearchParams = {
   size?: number
 }
 
+export type PlaceWeather = {
+  available: boolean
+  message: string | null
+  temperature: number | string | null
+  feelsLikeTemperature: number | string | null
+  precipitationProbability: number | null
+  humidity: number | null
+  windSpeed: number | string | null
+  precipitationType: string | null
+  skyStatus: string | null
+  precipitationOneHour: string | null
+  updatedAt: string | null
+}
+
 type PlaceApiItem = {
   placeId: number
   placeName: string
@@ -129,4 +143,8 @@ export async function fetchPlaces(params: PlaceSearchParams): Promise<PlacePage>
 
 export async function fetchPlaceFilters(): Promise<PlaceFilters> {
   return requestJson<PlaceFilters>(buildUrl('/api/places/filters'))
+}
+
+export async function fetchPlaceWeather(placeId: number): Promise<PlaceWeather> {
+  return requestJson<PlaceWeather>(buildUrl(`/api/places/${placeId}/weather`))
 }

@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { CalendarPlus, ChevronDown, CloudSun, Heart, Map, MessageSquareText, Share2, Star, Vote, X, Zap } from 'lucide-vue-next'
-import { computed, reactive, ref } from 'vue'
+import { CalendarPlus, ChevronDown, CloudSun, Droplets, Heart, LoaderCircle, Map, MessageSquareText, Share2, Star, Thermometer, Umbrella, Vote, Wind, X, Zap } from 'lucide-vue-next'
+import { computed, reactive, ref, watch } from 'vue'
+import { fetchPlaceWeather } from '@/entities/place/api/placeApi'
+import type { PlaceWeather } from '@/entities/place/api/placeApi'
 import { trips } from '@/entities/travel/model/travel'
 import type { Place } from '@/entities/travel/model/travel'
 import KakaoMap from '@/shared/ui/KakaoMap.vue'
@@ -17,6 +19,9 @@ const emit = defineEmits<{
 
 const liked = ref(false)
 const review = ref('')
+const weather = ref<PlaceWeather | null>(null)
+const isWeatherLoading = ref(false)
+const weatherMessage = ref('')
 const showAddModal = ref(false)
 const showMapModal = ref(false)
 const addMode = ref<'trip' | 'candidate'>('trip')
@@ -42,6 +47,73 @@ const mapMarkers = computed(() =>
       ]
     : [],
 )
+
+const weatherItems = computed(() => {
+  if (!weather.value?.available) return []
+  return [
+    {
+      label: '현재 기온',
+      value: formatTemperature(weather.value.temperature),
+      icon: Thermometer,
+    },
+    {
+      label: '체감 온도',
+      value: formatTemperature(weather.value.feelsLikeTemperature),
+      icon: CloudSun,
+    },
+    {
+      label: '강수 확률',
+      value: formatPercent(weather.value.precipitationProbability),
+      icon: Umbrella,
+    },
+    {
+      label: '습도',
+      value: formatPercent(weather.value.humidity),
+      icon: Droplets,
+    },
+    {
+      label: '풍속',
+      value: formatWind(weather.value.windSpeed),
+      icon: Wind,
+    },
+  ].filter((item) => item.value)
+})
+
+function formatNumber(value: number | string | null) {
+  if (value === null) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed.toFixed(1) : null
+}
+
+function formatTemperature(value: number | string | null) {
+  const formatted = formatNumber(value)
+  return formatted ? `${formatted}°C` : null
+}
+
+function formatPercent(value: number | null) {
+  return value === null ? null : `${value}%`
+}
+
+function formatWind(value: number | string | null) {
+  const formatted = formatNumber(value)
+  return formatted ? `${formatted}m/s` : null
+}
+
+async function loadWeather(placeId: number) {
+  isWeatherLoading.value = true
+  weatherMessage.value = ''
+  weather.value = null
+
+  try {
+    const result = await fetchPlaceWeather(placeId)
+    weather.value = result
+    weatherMessage.value = result.available ? '' : result.message || '날씨 정보를 불러올 수 없습니다.'
+  } catch {
+    weatherMessage.value = '날씨 정보를 불러올 수 없습니다.'
+  } finally {
+    isWeatherLoading.value = false
+  }
+}
 
 function addReview() {
   const text = review.value.trim()
@@ -69,6 +141,14 @@ function submitAddPlace() {
   addDraft.memo = ''
   emit('saved', message)
 }
+
+watch(
+  () => displayPlace.value?.id,
+  (placeId) => {
+    if (placeId) void loadWeather(placeId)
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -149,6 +229,37 @@ function submitAddPlace() {
 
       <aside class="space-y-4">
         <section class="brand-card rounded-2xl p-5">
+          <h2 class="mb-4 text-lg font-black text-slate-950">날씨 정보</h2>
+          <div v-if="isWeatherLoading" class="grid h-28 place-items-center rounded-lg bg-slate-50 text-sm font-black text-slate-500">
+            <span class="inline-flex items-center gap-2">
+              <LoaderCircle :size="17" class="animate-spin" />
+              날씨를 불러오는 중
+            </span>
+          </div>
+          <div v-else-if="weather?.available" class="grid gap-3 text-sm">
+            <p v-if="weather.skyStatus || weather.precipitationType" class="rounded-lg bg-brand-50 px-3 py-2">
+              <span class="block text-xs font-black text-brand-500">현재 상태</span>
+              <span class="mt-1 block font-black text-slate-900">
+                {{ [weather.skyStatus, weather.precipitationType && weather.precipitationType !== '없음' ? weather.precipitationType : null].filter(Boolean).join(' · ') || '맑음' }}
+              </span>
+            </p>
+            <p v-for="item in weatherItems" :key="item.label" class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+              <span class="inline-flex items-center gap-2 font-bold text-slate-500">
+                <component :is="item.icon" :size="16" />
+                {{ item.label }}
+              </span>
+              <span class="font-black text-slate-800">{{ item.value }}</span>
+            </p>
+            <p v-if="weather.precipitationOneHour" class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+              <span class="inline-flex items-center gap-2 font-bold text-slate-500"><Umbrella :size="16" /> 1시간 강수량</span>
+              <span class="font-black text-slate-800">{{ weather.precipitationOneHour }}</span>
+            </p>
+          </div>
+          <div v-else class="rounded-lg bg-slate-50 p-4 text-sm font-bold leading-6 text-slate-500">
+            {{ weatherMessage || '날씨 정보를 불러올 수 없습니다.' }}
+          </div>
+        </section>
+        <section v-if="false" class="brand-card rounded-2xl p-5">
           <h2 class="mb-4 text-lg font-black text-slate-950">부가 정보</h2>
           <div class="grid gap-3 text-sm">
             <p class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">

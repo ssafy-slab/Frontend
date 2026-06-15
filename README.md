@@ -1,33 +1,17 @@
-# slap-frontend
+# SLAP Frontend
 
-This template should help get you started developing with Vue 3 in Vite.
+Vue 3, Vite, Pinia 기반의 SLAP 여행 서비스 프론트엔드입니다.
 
-## Recommended IDE Setup
+## 주요 기능
 
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+- 탐색 탭에서 여행지 목록 조회
+- 카테고리, 시/도, 시/군/구, 키워드 기반 여행지 검색
+- 여행지 상세 화면에서 이미지, 지도, 날씨 정보 표시
+- 이미지 URL이 없거나 깨진 경우 기본 이미지로 대체
 
-## Recommended Browser Setup
+## 환경 변수
 
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd)
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
-
-## Type Support for `.vue` Imports in TS
-
-TypeScript cannot handle type information for `.vue` imports by default, so we replace the `tsc` CLI with `vue-tsc` for type checking. In editors, we need [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) to make the TypeScript language service aware of `.vue` types.
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
-
-### Environment Variables
-
-Copy `.env.example` to `.env` and fill in your Kakao JavaScript app key.
+`.env.example`을 `.env`로 복사한 뒤 값을 채웁니다.
 
 ```sh
 cp .env.example .env
@@ -35,26 +19,38 @@ cp .env.example .env
 
 ```env
 VITE_KAKAO_MAP_APP_KEY=your_kakao_javascript_app_key
+VITE_API_BASE_URL=http://localhost:8080
 ```
+
+- `VITE_KAKAO_MAP_APP_KEY`: Kakao JavaScript 앱 키
+- `VITE_API_BASE_URL`: 백엔드 API 주소
+
+## 실행
 
 ```sh
 pnpm install
-```
-
-### Compile and Hot-Reload for Development
-
-```sh
 pnpm dev
 ```
 
-### Type-Check, Compile and Minify for Production
+기본 개발 서버는 `http://localhost:5173`입니다.
+
+## 빌드
 
 ```sh
 pnpm build
 ```
 
-### Lint with [ESLint](https://eslint.org/)
+이 명령은 `vue-tsc` 타입 체크와 Vite 프로덕션 빌드를 함께 실행합니다.
 
-```sh
-pnpm lint
-```
+## 백엔드 연동
+
+백엔드는 기본적으로 `http://localhost:8080`에서 실행된다고 가정합니다.
+
+탐색/상세 화면에서 사용하는 주요 API는 다음과 같습니다.
+
+- `GET /api/places`
+- `GET /api/places/filters`
+- `GET /api/places/{placeId}`
+- `GET /api/places/{placeId}/weather`
+
+날씨 정보는 프론트에서 외부 API를 직접 호출하지 않고, 백엔드의 weather API를 통해 가져옵니다.
