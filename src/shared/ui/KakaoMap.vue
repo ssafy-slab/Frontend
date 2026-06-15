@@ -14,6 +14,7 @@ type MapMarker = {
 
 type KakaoMapInstance = {
   setCenter: (position: KakaoLatLngInstance) => void
+  setLevel: (level: number) => void
 }
 
 type KakaoMarkerInstance = {
@@ -165,6 +166,11 @@ function moveCenter() {
   map.setCenter(toKakaoLatLng(props.center))
 }
 
+function updateLevel() {
+  if (!map) return
+  map.setLevel(props.level)
+}
+
 async function createMap() {
   try {
     status.value = 'loading'
@@ -187,6 +193,7 @@ async function createMap() {
 }
 
 watch(() => props.center, moveCenter, { deep: true })
+watch(() => props.level, updateLevel)
 watch(() => [props.markers, props.selectedMarkerId], renderMarkers, { deep: true })
 
 onMounted(createMap)

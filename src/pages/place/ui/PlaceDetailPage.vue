@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CalendarPlus, ChevronDown, CloudSun, Droplets, Heart, Hospital, LoaderCircle, Map, MessageSquareText, Pill, Share2, Star, Store, Thermometer, Umbrella, Vote, Wind, X } from 'lucide-vue-next'
+import { CalendarPlus, ChevronDown, CloudSun, Droplets, Fuel, Heart, LoaderCircle, Map, MessageSquareText, Pill, Share2, Star, Store, Thermometer, Umbrella, Vote, Wind, X } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
 import { fetchPlaceNearbyFacilities, fetchPlaceWeather } from '@/entities/place/api/placeApi'
 import type { NearbyFacilitiesResponse, NearbyFacilityType, PlaceWeather } from '@/entities/place/api/placeApi'
@@ -86,9 +86,9 @@ const weatherItems = computed(() => {
 const nearbyFacilityTypes: {
   type: NearbyFacilityType
   label: string
-  icon: typeof Hospital
+  icon: typeof Fuel
 }[] = [
-  { type: 'HOSPITAL', label: '병원', icon: Hospital },
+  { type: 'GAS_STATION', label: '주유소', icon: Fuel },
   { type: 'PHARMACY', label: '약국', icon: Pill },
   { type: 'CONVENIENCE_STORE', label: '편의점', icon: Store },
 ]
@@ -164,7 +164,6 @@ async function loadNearbyFacilities(placeId: number) {
 
   try {
     const result = await fetchPlaceNearbyFacilities(placeId, {
-      radiusM: 200,
       limit: 10,
       types: nearbyFacilityTypes.map((item) => item.type),
     })
@@ -344,10 +343,10 @@ watch(
         <section class="brand-card rounded-2xl p-5">
           <div class="mb-4 flex items-start justify-between gap-3">
             <div>
-              <h2 class="text-lg font-black text-slate-950">200m 주변 편의시설</h2>
-              <p class="mt-1 text-xs font-bold text-slate-500">병원 · 약국 · 편의점</p>
+              <h2 class="text-lg font-black text-slate-950">가장 가까운 주변 편의시설</h2>
+              <p class="mt-1 text-xs font-bold text-slate-500">주유소 · 약국 · 편의점</p>
             </div>
-            <span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-500">200m</span>
+            <span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-500">가까운 순</span>
           </div>
 
           <div v-if="isNearbyFacilitiesLoading" class="grid h-28 place-items-center rounded-lg bg-slate-50 text-sm font-black text-slate-500">
@@ -364,16 +363,16 @@ watch(
               v-for="item in nearbyFacilityItems"
               :key="item.type"
               class="rounded-lg border px-3 py-3"
-              :class="item.available ? 'border-emerald-100 bg-emerald-50/70' : 'border-slate-200 bg-slate-50'"
+              :class="item.available ? 'border-blue-100 bg-blue-50/70' : 'border-slate-200 bg-slate-50'"
             >
               <div class="flex items-center justify-between gap-3">
                 <span class="inline-flex min-w-0 items-center gap-2 font-black text-slate-800">
-                  <component :is="item.icon" :size="17" :class="item.available ? 'text-emerald-600' : 'text-slate-400'" />
+                  <component :is="item.icon" :size="17" :class="item.available ? 'text-blue-600' : 'text-slate-400'" />
                   {{ item.label }}
                 </span>
                 <span
                   class="shrink-0 rounded-full px-2.5 py-1 text-xs font-black"
-                  :class="item.available ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500'"
+                  :class="item.available ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-500'"
                 >
                   {{ item.available ? '있음' : '없음' }}
                 </span>

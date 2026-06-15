@@ -33,14 +33,16 @@ const addDraft = reactive({
 })
 
 const selectedPlace = computed(() => places.value.find((place) => place.id === selectedPlaceId.value) ?? places.value[0] ?? null)
+const focusedPlace = computed(() => places.value.find((place) => place.id === selectedPlaceId.value) ?? null)
 const mapMarkers = computed(() =>
-  places.value.map((place) => ({
+  (focusedPlace.value ? [focusedPlace.value] : places.value).map((place) => ({
     id: place.id,
     title: place.title,
     position: place.coordinates,
   })),
 )
 const mapCenter = computed(() => selectedPlace.value?.coordinates ?? { lat: 37.5665, lng: 126.978 })
+const mapLevel = computed(() => (focusedPlace.value ? 4 : 8))
 const provinces = computed(() => regions.value.filter((region) => region.regionLevel === 1 && region.placeCount > 0))
 const districts = computed(() =>
   regions.value.filter((region) => region.regionLevel === 2 && String(region.parentRegionId ?? '') === selectedProvinceId.value && region.placeCount > 0),
@@ -309,7 +311,7 @@ onMounted(async () => {
             :center="mapCenter"
             :markers="mapMarkers"
             :selected-marker-id="selectedPlaceId"
-            :level="8"
+            :level="mapLevel"
             @marker-click="selectedPlaceId = Number($event.id)"
           />
 

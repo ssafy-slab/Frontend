@@ -42,7 +42,7 @@ export type PlaceWeather = {
   updatedAt: string | null
 }
 
-export type NearbyFacilityType = 'HOSPITAL' | 'PHARMACY' | 'CONVENIENCE_STORE'
+export type NearbyFacilityType = 'GAS_STATION' | 'PHARMACY' | 'CONVENIENCE_STORE'
 
 export type NearbyFacility = {
   facilityId: number
