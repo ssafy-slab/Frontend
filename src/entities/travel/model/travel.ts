@@ -3,6 +3,7 @@ export type Place = {
   title: string
   location: string
   category: string
+  rawCategory?: string
   description: string
   image: string
   rating: number
@@ -18,6 +19,10 @@ export type Place = {
     lat: number
     lng: number
   }
+  address?: string
+  regionId?: number
+  regionName?: string
+  regionFullName?: string
 }
 
 export type Trip = {
