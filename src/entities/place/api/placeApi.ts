@@ -42,6 +42,43 @@ export type PlaceWeather = {
   updatedAt: string | null
 }
 
+export type NearbyFacilityType = 'HOSPITAL' | 'PHARMACY' | 'CONVENIENCE_STORE'
+
+export type NearbyFacility = {
+  facilityId: number
+  facilityType: NearbyFacilityType
+  categoryGroupCode: string
+  categoryName: string | null
+  facilityName: string
+  phone: string | null
+  address: string | null
+  roadAddress: string | null
+  latitude: number | string | null
+  longitude: number | string | null
+  placeUrl: string | null
+  distanceM: number | string | null
+}
+
+export type NearbyFacilityGroup = {
+  facilityType: NearbyFacilityType
+  categoryGroupCode: string
+  label: string
+  cached: boolean
+  facilities: NearbyFacility[]
+}
+
+export type NearbyFacilitiesResponse = {
+  placeId: number
+  searchRadiusM: number
+  groups: NearbyFacilityGroup[]
+}
+
+export type NearbyFacilitiesParams = {
+  radiusM?: number
+  limit?: number
+  types?: NearbyFacilityType[]
+}
+
 type PlaceApiItem = {
   placeId: number
   placeName: string
@@ -147,4 +184,14 @@ export async function fetchPlaceFilters(): Promise<PlaceFilters> {
 
 export async function fetchPlaceWeather(placeId: number): Promise<PlaceWeather> {
   return requestJson<PlaceWeather>(buildUrl(`/api/places/${placeId}/weather`))
+}
+
+export async function fetchPlaceNearbyFacilities(placeId: number, params: NearbyFacilitiesParams = {}): Promise<NearbyFacilitiesResponse> {
+  return requestJson<NearbyFacilitiesResponse>(
+    buildUrl(`/api/places/${placeId}/nearby-facilities`, {
+      radiusM: params.radiusM,
+      limit: params.limit,
+      types: params.types?.join(','),
+    }),
+  )
 }

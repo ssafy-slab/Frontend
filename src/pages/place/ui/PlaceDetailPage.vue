@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { CalendarPlus, ChevronDown, CloudSun, Droplets, Heart, LoaderCircle, Map, MessageSquareText, Share2, Star, Thermometer, Umbrella, Vote, Wind, X, Zap } from 'lucide-vue-next'
+import { CalendarPlus, ChevronDown, CloudSun, Droplets, Heart, Hospital, LoaderCircle, Map, MessageSquareText, Pill, Share2, Star, Store, Thermometer, Umbrella, Vote, Wind, X } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
-import { fetchPlaceWeather } from '@/entities/place/api/placeApi'
-import type { PlaceWeather } from '@/entities/place/api/placeApi'
+import { fetchPlaceNearbyFacilities, fetchPlaceWeather } from '@/entities/place/api/placeApi'
+import type { NearbyFacilitiesResponse, NearbyFacilityType, PlaceWeather } from '@/entities/place/api/placeApi'
 import { trips } from '@/entities/travel/model/travel'
 import type { Place } from '@/entities/travel/model/travel'
 import KakaoMap from '@/shared/ui/KakaoMap.vue'
@@ -20,10 +20,14 @@ const emit = defineEmits<{
 const liked = ref(false)
 const review = ref('')
 const weather = ref<PlaceWeather | null>(null)
+const nearbyFacilities = ref<NearbyFacilitiesResponse | null>(null)
 const isWeatherLoading = ref(false)
+const isNearbyFacilitiesLoading = ref(false)
 const weatherMessage = ref('')
+const nearbyFacilitiesMessage = ref('')
 const showAddModal = ref(false)
 const showMapModal = ref(false)
+let nearbyFacilitiesRequestId = 0
 const addMode = ref<'trip' | 'candidate'>('trip')
 const addDraft = reactive({
   tripId: String(trips.find((trip) => trip.phase === 'upcoming')?.id ?? ''),
@@ -79,6 +83,32 @@ const weatherItems = computed(() => {
   ].filter((item) => item.value)
 })
 
+const nearbyFacilityTypes: {
+  type: NearbyFacilityType
+  label: string
+  icon: typeof Hospital
+}[] = [
+  { type: 'HOSPITAL', label: '병원', icon: Hospital },
+  { type: 'PHARMACY', label: '약국', icon: Pill },
+  { type: 'CONVENIENCE_STORE', label: '편의점', icon: Store },
+]
+
+const nearbyFacilityItems = computed(() =>
+  nearbyFacilityTypes.map((item) => {
+    const group = nearbyFacilities.value?.groups.find((candidate) => candidate.facilityType === item.type)
+    const facilities = group?.facilities ?? []
+    const nearest = [...facilities].sort((left, right) => toDistance(left.distanceM) - toDistance(right.distanceM))[0] ?? null
+
+    return {
+      ...item,
+      count: facilities.length,
+      group,
+      nearest,
+      available: facilities.length > 0,
+    }
+  }),
+)
+
 function formatNumber(value: number | string | null) {
   if (value === null) return null
   const parsed = Number(value)
@@ -99,6 +129,17 @@ function formatWind(value: number | string | null) {
   return formatted ? `${formatted}m/s` : null
 }
 
+function toDistance(value: number | string | null) {
+  if (value === null) return Number.POSITIVE_INFINITY
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY
+}
+
+function formatDistance(value: number | string | null) {
+  const distance = toDistance(value)
+  return Number.isFinite(distance) ? `${Math.round(distance)}m` : null
+}
+
 async function loadWeather(placeId: number) {
   isWeatherLoading.value = true
   weatherMessage.value = ''
@@ -112,6 +153,32 @@ async function loadWeather(placeId: number) {
     weatherMessage.value = '날씨 정보를 불러올 수 없습니다.'
   } finally {
     isWeatherLoading.value = false
+  }
+}
+
+async function loadNearbyFacilities(placeId: number) {
+  const requestId = ++nearbyFacilitiesRequestId
+  isNearbyFacilitiesLoading.value = true
+  nearbyFacilitiesMessage.value = ''
+  nearbyFacilities.value = null
+
+  try {
+    const result = await fetchPlaceNearbyFacilities(placeId, {
+      radiusM: 200,
+      limit: 10,
+      types: nearbyFacilityTypes.map((item) => item.type),
+    })
+
+    if (requestId !== nearbyFacilitiesRequestId) return
+    nearbyFacilities.value = result
+    nearbyFacilitiesMessage.value = result.groups.length ? '' : '좌표 정보가 없어 주변 시설을 확인할 수 없습니다.'
+  } catch {
+    if (requestId !== nearbyFacilitiesRequestId) return
+    nearbyFacilitiesMessage.value = '주변 시설 정보를 불러올 수 없습니다.'
+  } finally {
+    if (requestId === nearbyFacilitiesRequestId) {
+      isNearbyFacilitiesLoading.value = false
+    }
   }
 }
 
@@ -145,7 +212,9 @@ function submitAddPlace() {
 watch(
   () => displayPlace.value?.id,
   (placeId) => {
-    if (placeId) void loadWeather(placeId)
+    if (!placeId) return
+    void loadWeather(placeId)
+    void loadNearbyFacilities(placeId)
   },
   { immediate: true },
 )
@@ -270,6 +339,51 @@ watch(
               <span class="inline-flex items-center gap-2 font-bold text-slate-500"><Zap :size="16" /> 충전소</span>
               <span class="font-black text-slate-800">1.2km</span>
             </p>
+          </div>
+        </section>
+        <section class="brand-card rounded-2xl p-5">
+          <div class="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <h2 class="text-lg font-black text-slate-950">200m 주변 편의시설</h2>
+              <p class="mt-1 text-xs font-bold text-slate-500">병원 · 약국 · 편의점</p>
+            </div>
+            <span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-500">200m</span>
+          </div>
+
+          <div v-if="isNearbyFacilitiesLoading" class="grid h-28 place-items-center rounded-lg bg-slate-50 text-sm font-black text-slate-500">
+            <span class="inline-flex items-center gap-2">
+              <LoaderCircle :size="17" class="animate-spin" />
+              주변 시설 확인 중
+            </span>
+          </div>
+          <div v-else class="grid gap-3 text-sm">
+            <p v-if="nearbyFacilitiesMessage" class="rounded-lg bg-slate-50 p-4 font-bold leading-6 text-slate-500">
+              {{ nearbyFacilitiesMessage }}
+            </p>
+            <article
+              v-for="item in nearbyFacilityItems"
+              :key="item.type"
+              class="rounded-lg border px-3 py-3"
+              :class="item.available ? 'border-emerald-100 bg-emerald-50/70' : 'border-slate-200 bg-slate-50'"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <span class="inline-flex min-w-0 items-center gap-2 font-black text-slate-800">
+                  <component :is="item.icon" :size="17" :class="item.available ? 'text-emerald-600' : 'text-slate-400'" />
+                  {{ item.label }}
+                </span>
+                <span
+                  class="shrink-0 rounded-full px-2.5 py-1 text-xs font-black"
+                  :class="item.available ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500'"
+                >
+                  {{ item.available ? '있음' : '없음' }}
+                </span>
+              </div>
+              <p v-if="item.nearest" class="mt-2 truncate text-xs font-bold text-slate-600">
+                {{ item.nearest.facilityName }}
+                <span v-if="formatDistance(item.nearest.distanceM)"> · {{ formatDistance(item.nearest.distanceM) }}</span>
+              </p>
+              <p v-else class="mt-2 text-xs font-bold text-slate-500">반경 안에 확인된 시설이 없습니다.</p>
+            </article>
           </div>
         </section>
         <section class="brand-card relative h-72 cursor-pointer overflow-hidden rounded-2xl p-0" @click="showMapModal = true">
