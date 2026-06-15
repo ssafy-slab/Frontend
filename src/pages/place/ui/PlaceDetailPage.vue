@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { CalendarPlus, ChevronDown, Clock3, CloudSun, Droplets, Fuel, Heart, LoaderCircle, Map, MessageSquareText, Pill, Share2, Star, Store, Thermometer, Umbrella, Vote, Wind, X } from 'lucide-vue-next'
+import { CalendarDays, CalendarPlus, ChevronDown, CloudSun, Droplets, Fuel, Heart, LoaderCircle, Map, MessageSquareText, Pill, Share2, Star, Store, Thermometer, Umbrella, Vote, Wind, X } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
 import { fetchPlaceNearbyFacilities, fetchPlaceWeather } from '@/entities/place/api/placeApi'
-import type { NearbyFacilitiesResponse, NearbyFacilityType, PlaceWeather } from '@/entities/place/api/placeApi'
+import type { NearbyFacilitiesResponse, NearbyFacilityType, PlaceWeather, PlaceWeatherForecast } from '@/entities/place/api/placeApi'
 import { trips } from '@/entities/travel/model/travel'
 import type { Place } from '@/entities/travel/model/travel'
 import KakaoMap from '@/shared/ui/KakaoMap.vue'
@@ -83,9 +83,38 @@ const weatherItems = computed(() => {
   ].filter((item) => item.value)
 })
 
-const weatherForecasts = computed(() => {
+const weatherForecastDays = computed(() => {
   if (!weather.value?.available) return []
-  return (weather.value.forecasts ?? []).slice(0, 6)
+  const grouped = new globalThis.Map<string, PlaceWeatherForecast[]>()
+
+  ;(weather.value.forecasts ?? []).forEach((forecast) => {
+    const key = getForecastDateKey(forecast.forecastAt)
+    if (!key) return
+    grouped.set(key, [...(grouped.get(key) ?? []), forecast])
+  })
+
+  return [...grouped.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([dateKey, forecasts]) => {
+      const temperatures = forecasts.map((forecast) => toFiniteNumber(forecast.temperature)).filter((value): value is number => value !== null)
+      const humidityValues = forecasts.map((forecast) => toFiniteNumber(forecast.humidity)).filter((value): value is number => value !== null)
+      const windValues = forecasts.map((forecast) => toFiniteNumber(forecast.windSpeed)).filter((value): value is number => value !== null)
+      const precipitationValues = forecasts.map((forecast) => toFiniteNumber(forecast.precipitationProbability)).filter((value): value is number => value !== null)
+      const precipitationAmount = forecasts.find((forecast) => forecast.precipitationOneHour)?.precipitationOneHour ?? null
+
+      return {
+        dateKey,
+        label: formatForecastDate(dateKey),
+        state: pickDailyWeatherState(forecasts),
+        minTemperature: temperatures.length ? Math.min(...temperatures) : null,
+        maxTemperature: temperatures.length ? Math.max(...temperatures) : null,
+        maxPrecipitationProbability: precipitationValues.length ? Math.max(...precipitationValues) : null,
+        averageHumidity: averageNumber(humidityValues),
+        averageWindSpeed: averageNumber(windValues),
+        precipitationAmount,
+      }
+    })
+    .slice(0, 5)
 })
 
 const nearbyFacilityTypes: {
@@ -134,15 +163,33 @@ function formatWind(value: number | string | null) {
   return formatted ? `${formatted}m/s` : null
 }
 
-function formatForecastTime(value: string | null) {
-  if (!value) return '시간 미정'
+function toFiniteNumber(value: number | string | null) {
+  if (value === null) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function averageNumber(values: number[]) {
+  if (!values.length) return null
+  return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+function getForecastDateKey(value: string | null) {
+  if (!value) return null
+  const datePart = value.match(/^\d{4}-\d{2}-\d{2}/)?.[0]
+  if (datePart) return datePart
   const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value.slice(0, 10) || null
+  return date.toISOString().slice(0, 10)
+}
+
+function formatForecastDate(value: string) {
+  const date = new Date(`${value}T00:00:00`)
   if (Number.isNaN(date.getTime())) return value
   return new Intl.DateTimeFormat('ko-KR', {
     month: 'numeric',
     day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+    weekday: 'short',
   }).format(date)
 }
 
@@ -208,6 +255,23 @@ function displayPrecipitationType(value: string | number | null) {
 function displayWeatherState(skyStatus: string | number | null, precipitationType: string | number | null) {
   const precipitation = displayPrecipitationType(precipitationType)
   return [displaySkyStatus(skyStatus), precipitation && precipitation !== '없음' ? precipitation : null].filter(Boolean).join(' · ') || '맑음'
+}
+
+function pickDailyWeatherState(forecasts: PlaceWeatherForecast[]) {
+  const rainyForecast = forecasts.find((forecast) => {
+    const precipitation = displayPrecipitationType(forecast.precipitationType)
+    return precipitation && precipitation !== '없음'
+  })
+  const target = rainyForecast ?? forecasts.find((forecast) => forecast.skyStatus || forecast.precipitationType)
+  return target ? displayWeatherState(target.skyStatus, target.precipitationType) : '맑음'
+}
+
+function formatTemperatureRange(minTemperature: number | null, maxTemperature: number | null) {
+  if (minTemperature === null && maxTemperature === null) return '-'
+  if (minTemperature === null) return `${Number(maxTemperature).toFixed(1)}°C`
+  if (maxTemperature === null) return `${minTemperature.toFixed(1)}°C`
+  if (minTemperature === maxTemperature) return `${minTemperature.toFixed(1)}°C`
+  return `${minTemperature.toFixed(1)}°C / ${maxTemperature.toFixed(1)}°C`
 }
 
 function toDistance(value: number | string | null) {
@@ -403,25 +467,25 @@ watch(
               <span class="inline-flex items-center gap-2 font-bold text-slate-500"><Umbrella :size="16" /> 1시간 강수량</span>
               <span class="font-black text-slate-800">{{ weather.precipitationOneHour }}</span>
             </p>
-            <div v-if="weatherForecasts.length" class="mt-1 grid gap-2">
+            <div v-if="weatherForecastDays.length" class="mt-1 grid gap-2">
               <h3 class="flex items-center gap-2 pt-2 text-sm font-black text-slate-950">
-                <Clock3 :size="16" class="text-brand-500" />
-                시간대별 단기예보
+                <CalendarDays :size="16" class="text-brand-500" />
+                날짜별 단기예보
               </h3>
-              <article v-for="forecast in weatherForecasts" :key="forecast.forecastAt ?? `${forecast.temperature}-${forecast.updatedAt}`" class="rounded-lg border border-slate-200 bg-white px-3 py-3">
+              <article v-for="forecastDay in weatherForecastDays" :key="forecastDay.dateKey" class="rounded-lg border border-slate-200 bg-white px-3 py-3">
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
-                    <p class="text-xs font-black text-brand-500">{{ formatForecastTime(forecast.forecastAt) }}</p>
-                    <p class="mt-1 truncate font-black text-slate-900">{{ displayWeatherState(forecast.skyStatus, forecast.precipitationType) }}</p>
+                    <p class="text-xs font-black text-brand-500">{{ forecastDay.label }}</p>
+                    <p class="mt-1 truncate font-black text-slate-900">{{ forecastDay.state }}</p>
                   </div>
-                  <span class="shrink-0 text-base font-black text-slate-950">{{ formatTemperature(forecast.temperature) ?? '-' }}</span>
+                  <span class="shrink-0 text-right text-base font-black text-slate-950">{{ formatTemperatureRange(forecastDay.minTemperature, forecastDay.maxTemperature) }}</span>
                 </div>
                 <div class="mt-2 grid grid-cols-3 gap-2 text-[11px] font-bold text-slate-500">
-                  <span>강수 {{ formatPercent(forecast.precipitationProbability) ?? '-' }}</span>
-                  <span>습도 {{ formatPercent(forecast.humidity) ?? '-' }}</span>
-                  <span>풍속 {{ formatWind(forecast.windSpeed) ?? '-' }}</span>
+                  <span>최대 강수 {{ formatPercent(forecastDay.maxPrecipitationProbability) ?? '-' }}</span>
+                  <span>평균 습도 {{ formatPercent(forecastDay.averageHumidity === null ? null : Math.round(forecastDay.averageHumidity)) ?? '-' }}</span>
+                  <span>평균 풍속 {{ formatWind(forecastDay.averageWindSpeed) ?? '-' }}</span>
                 </div>
-                <p v-if="forecast.precipitationOneHour" class="mt-2 text-[11px] font-bold text-slate-500">1시간 강수량 {{ forecast.precipitationOneHour }}</p>
+                <p v-if="forecastDay.precipitationAmount" class="mt-2 text-[11px] font-bold text-slate-500">강수량 {{ forecastDay.precipitationAmount }}</p>
               </article>
             </div>
           </div>
