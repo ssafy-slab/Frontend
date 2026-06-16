@@ -94,7 +94,7 @@ function handleLogout() {
     @logout="handleLogout"
   />
 
-  <main class="page-shell pb-24 md:pb-0">
+  <main class="page-shell" :class="activeView === 'explore' ? 'pb-0' : 'pb-24 md:pb-0'">
     <Transition name="page-fade" mode="out-in">
       <HomePage v-if="activeView === 'home'" key="home" @change="changeView" @open-place="openPlace" />
       <ExplorePage v-else-if="activeView === 'explore'" key="explore" @open-place="openPlace" @saved="showToast" />
@@ -109,7 +109,7 @@ function handleLogout() {
     </Transition>
   </main>
 
-  <AppFooter />
+  <AppFooter v-if="activeView !== 'explore'" />
 
   <MobileNav :active-view="activeView" @change="changeView" />
 

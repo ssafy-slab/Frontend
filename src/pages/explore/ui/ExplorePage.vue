@@ -1,6 +1,21 @@
 <script setup lang="ts">
-import { ChevronDown, Heart, LoaderCircle, RotateCcw, Search, Star, X } from 'lucide-vue-next'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import {
+  Bed,
+  Bike,
+  ChevronDown,
+  Heart,
+  Landmark,
+  LoaderCircle,
+  MapPin,
+  Palette,
+  RotateCcw,
+  Search,
+  ShoppingBag,
+  Sparkles,
+  Utensils,
+  X,
+} from 'lucide-vue-next'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { fetchPlaceFilters, fetchPlaces } from '@/entities/place/api/placeApi'
 import type { PlaceCategory, RegionFilter } from '@/entities/place/api/placeApi'
 import { trips } from '@/entities/travel/model/travel'
@@ -26,13 +41,21 @@ const isLoading = ref(false)
 const errorMessage = ref('')
 const showAddModal = ref(false)
 const addTarget = ref<Place | null>(null)
+const listScroller = ref<HTMLElement | null>(null)
+const loadMoreTarget = ref<HTMLElement | null>(null)
+const listSheet = ref<HTMLElement | null>(null)
+const isListSheetExpanded = ref(true)
+const isDraggingListSheet = ref(false)
+const didDragListSheet = ref(false)
+const listSheetDragStartY = ref(0)
+const listSheetDragDeltaY = ref(0)
 const addDraft = reactive({
   tripId: String(trips[0]?.id ?? ''),
   time: '13:00',
   memo: '',
 })
 
-const selectedPlace = computed(() => places.value.find((place) => place.id === selectedPlaceId.value) ?? places.value[0] ?? null)
+const selectedPlace = computed(() => places.value.find((place) => place.id === selectedPlaceId.value) ?? null)
 const focusedPlace = computed(() => places.value.find((place) => place.id === selectedPlaceId.value) ?? null)
 const mapMarkers = computed(() =>
   (focusedPlace.value ? [focusedPlace.value] : places.value).map((place) => ({
@@ -41,14 +64,37 @@ const mapMarkers = computed(() =>
     position: place.coordinates,
   })),
 )
-const mapCenter = computed(() => selectedPlace.value?.coordinates ?? { lat: 37.5665, lng: 126.978 })
+const mapCenter = computed(() => focusedPlace.value?.coordinates ?? places.value[0]?.coordinates ?? { lat: 37.5665, lng: 126.978 })
 const mapLevel = computed(() => (focusedPlace.value ? 4 : 8))
 const provinces = computed(() => regions.value.filter((region) => region.regionLevel === 1 && region.placeCount > 0))
 const districts = computed(() =>
   regions.value.filter((region) => region.regionLevel === 2 && String(region.parentRegionId ?? '') === selectedProvinceId.value && region.placeCount > 0),
 )
+const listSheetDragStyle = computed(() => {
+  if (!isDraggingListSheet.value || !listSheet.value) return undefined
+
+  const collapsedOffset = getCollapsedListSheetOffset()
+  const baseOffset = isListSheetExpanded.value ? 0 : collapsedOffset
+  const nextOffset = Math.min(Math.max(baseOffset + listSheetDragDeltaY.value, 0), collapsedOffset)
+  return {
+    transform: `translateY(${nextOffset}px)`,
+    transition: 'none',
+  }
+})
+
+function getCategoryIcon(category: Pick<PlaceCategory, 'label' | 'value'>) {
+  const text = `${category.label} ${category.value}`
+  if (text.includes('음식')) return Utensils
+  if (text.includes('관광')) return Landmark
+  if (text.includes('쇼핑')) return ShoppingBag
+  if (text.includes('레저') || text.includes('스포츠')) return Bike
+  if (text.includes('숙박')) return Bed
+  if (text.includes('문화')) return Palette
+  return Sparkles
+}
 
 let filterLoadTimer: number | undefined
+let loadMoreObserver: IntersectionObserver | undefined
 
 const emit = defineEmits<{
   openPlace: [place: Place]
@@ -62,6 +108,8 @@ async function loadFilters() {
 }
 
 async function loadPlaces(nextPage = 0) {
+  if (isLoading.value || (nextPage > 0 && !hasNext.value)) return
+
   isLoading.value = true
   errorMessage.value = ''
 
@@ -78,12 +126,29 @@ async function loadPlaces(nextPage = 0) {
     page.value = result.page
     totalElements.value = result.totalElements
     hasNext.value = result.hasNext
-    selectedPlaceId.value = places.value[0]?.id ?? null
+    if (nextPage === 0) selectedPlaceId.value = null
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '여행지를 불러오지 못했습니다.'
   } finally {
     isLoading.value = false
   }
+}
+
+function setupLoadMoreObserver() {
+  loadMoreObserver?.disconnect()
+  if (!loadMoreTarget.value) return
+
+  loadMoreObserver = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        void loadPlaces(page.value + 1)
+      }
+    },
+    {
+      rootMargin: '160px 0px',
+    },
+  )
+  loadMoreObserver.observe(loadMoreTarget.value)
 }
 
 function submitSearch() {
@@ -122,6 +187,65 @@ function openAddModal(place: Place) {
   showAddModal.value = true
 }
 
+function selectPlaceOnMap(place: Place) {
+  selectedPlaceId.value = place.id
+}
+
+function showAllPlacesOnMap() {
+  selectedPlaceId.value = null
+}
+
+function toggleListSheet() {
+  isListSheetExpanded.value = !isListSheetExpanded.value
+}
+
+function handleListSheetHandleClick() {
+  if (didDragListSheet.value) {
+    didDragListSheet.value = false
+    return
+  }
+  toggleListSheet()
+}
+
+function getCollapsedListSheetOffset() {
+  return Math.max((listSheet.value?.offsetHeight ?? 0) - 56, 0)
+}
+
+function startListSheetDrag(event: PointerEvent) {
+  if (window.innerWidth >= 768) return
+
+  isDraggingListSheet.value = true
+  didDragListSheet.value = false
+  listSheetDragStartY.value = event.clientY
+  listSheetDragDeltaY.value = 0
+  window.addEventListener('pointermove', dragListSheet)
+  window.addEventListener('pointerup', endListSheetDrag)
+  window.addEventListener('pointercancel', endListSheetDrag)
+}
+
+function dragListSheet(event: PointerEvent) {
+  if (!isDraggingListSheet.value) return
+  listSheetDragDeltaY.value = event.clientY - listSheetDragStartY.value
+  if (Math.abs(listSheetDragDeltaY.value) > 8) didDragListSheet.value = true
+}
+
+function endListSheetDrag() {
+  if (!isDraggingListSheet.value) return
+
+  const threshold = 72
+  if (isListSheetExpanded.value && listSheetDragDeltaY.value > threshold) {
+    isListSheetExpanded.value = false
+  } else if (!isListSheetExpanded.value && listSheetDragDeltaY.value < -threshold) {
+    isListSheetExpanded.value = true
+  }
+
+  isDraggingListSheet.value = false
+  listSheetDragDeltaY.value = 0
+  window.removeEventListener('pointermove', dragListSheet)
+  window.removeEventListener('pointerup', endListSheetDrag)
+  window.removeEventListener('pointercancel', endListSheetDrag)
+}
+
 function addToTrip() {
   if (!addTarget.value) return
   const trip = trips.find((item) => String(item.id) === addDraft.tripId)
@@ -147,99 +271,95 @@ onMounted(async () => {
     regions.value = []
   }
   await loadPlaces(0)
+  await nextTick()
+  setupLoadMoreObserver()
+})
+
+onBeforeUnmount(() => {
+  if (filterLoadTimer) window.clearTimeout(filterLoadTimer)
+  loadMoreObserver?.disconnect()
+  window.removeEventListener('pointermove', dragListSheet)
+  window.removeEventListener('pointerup', endListSheetDrag)
+  window.removeEventListener('pointercancel', endListSheetDrag)
 })
 </script>
 
 <template>
-  <section class="app-container py-5 md:py-7">
-    <div class="brand-card overflow-hidden rounded-xl">
-      <div class="space-y-4 border-b border-slate-200 p-4">
-        <form class="flex h-12 overflow-hidden rounded-full border-2 border-brand-500 bg-slate-50 shadow-md shadow-indigo-100 sm:h-14" @submit.prevent="submitSearch">
+  <section class="min-h-[calc(100vh-56px)] bg-slate-50 md:h-[calc(100vh-64px)] md:overflow-hidden">
+    <div class="grid min-h-[calc(100vh-56px)] bg-white shadow-sm md:h-full md:min-h-0 md:grid-cols-[340px_minmax(0,1fr)] lg:grid-cols-[360px_minmax(0,1fr)] xl:grid-cols-[390px_minmax(0,1fr)]">
+      <aside
+        ref="listSheet"
+        class="fixed inset-x-0 bottom-[72px] z-40 flex max-h-[76vh] min-h-0 flex-col overflow-hidden rounded-t-2xl border-t border-slate-200 bg-white shadow-2xl shadow-slate-900/15 transition-transform duration-300 md:static md:order-1 md:max-h-none md:translate-y-0 md:rounded-none md:border-r md:border-t-0 md:shadow-none"
+        :class="isListSheetExpanded ? 'translate-y-0' : 'translate-y-[calc(100%-56px)] md:translate-y-0'"
+        :style="listSheetDragStyle"
+      >
+        <button
+          class="grid min-h-10 touch-none place-items-center border-b border-slate-100 bg-white md:hidden"
+          :aria-label="isListSheetExpanded ? '여행지 목록 접기' : '여행지 목록 펼치기'"
+          @click="handleListSheetHandleClick"
+          @pointerdown="startListSheetDrag"
+        >
+          <span class="h-1.5 w-12 rounded-full bg-slate-300"></span>
+        </button>
+        <div class="space-y-3 border-b border-slate-200 bg-white p-4">
+        <form class="flex h-10 overflow-hidden rounded-xl border-2 border-brand-500 bg-slate-50 shadow-sm shadow-indigo-100" @submit.prevent="submitSearch">
           <input
             v-model="keywordInput"
-            class="min-w-0 flex-1 bg-transparent px-4 text-sm font-semibold text-slate-700 outline-none sm:text-base"
+            class="min-w-0 flex-1 bg-transparent px-3 text-sm font-semibold text-slate-700 outline-none"
             placeholder="어떤 장소를 찾으시나요? 예: 경복궁, 강릉 카페"
           />
-          <button class="grid w-14 place-items-center bg-brand-500 text-white hover:bg-brand-600" aria-label="검색">
-            <Search :size="23" />
+          <button class="grid w-11 place-items-center bg-brand-500 text-white hover:bg-brand-600" aria-label="검색">
+            <Search :size="19" />
           </button>
         </form>
 
-        <div class="grid gap-3 xl:grid-cols-[1fr_auto] xl:items-center">
-          <div class="rounded-xl border border-slate-200 bg-slate-100/80 p-1">
-            <div class="flex flex-wrap gap-1">
-            <button
-              class="min-h-9 rounded-lg px-3 text-xs font-black transition sm:text-sm"
-              :class="selectedCategory === '' ? 'bg-white text-brand-600 shadow-sm ring-1 ring-brand-100' : 'text-slate-600 hover:bg-white/70 hover:text-slate-950'"
-              @click="selectedCategory = ''"
-            >
-              전체
-            </button>
-            <button
-              v-for="category in categories"
-              :key="category.value"
-              class="min-h-9 rounded-lg px-3 text-xs font-black transition sm:text-sm"
-              :class="selectedCategory === category.value ? 'bg-white text-brand-600 shadow-sm ring-1 ring-brand-100' : 'text-slate-600 hover:bg-white/70 hover:text-slate-950'"
-              @click="selectedCategory = category.value"
-            >
-              {{ category.label }}
-            </button>
-            </div>
-          </div>
-
-          <div class="grid gap-2 rounded-xl border border-slate-200 bg-white p-2 shadow-sm sm:grid-cols-[minmax(0,170px)_minmax(0,210px)_40px] sm:items-end">
-            <label class="block">
-              <span class="mb-1 block px-1 text-[11px] font-black text-slate-500">시/도</span>
-              <span class="select-wrap select-wrap-full">
-                <select
-                  v-model="selectedProvinceId"
-                  class="select-control h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-3 pr-9 text-xs font-black text-slate-950 outline-none transition focus:border-brand-500 focus:bg-white sm:text-sm"
-                  aria-label="시도 선택"
-                >
-                  <option value="">전체</option>
-                  <option v-for="region in provinces" :key="region.regionId" :value="String(region.regionId)">
-                    {{ region.regionName }}
-                  </option>
-                </select>
-                <ChevronDown :size="15" class="select-chevron" />
-              </span>
-            </label>
-            <label class="block">
-              <span class="mb-1 block px-1 text-[11px] font-black text-slate-500">시/군/구</span>
-              <span class="select-wrap select-wrap-full">
-                <select
-                  v-model="selectedDistrictId"
-                  class="select-control h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-3 pr-9 text-xs font-black text-slate-950 outline-none transition focus:border-brand-500 focus:bg-white disabled:cursor-not-allowed disabled:text-slate-400 sm:text-sm"
-                  aria-label="시군구 선택"
-                  :disabled="!selectedProvinceId"
-                >
-                  <option value="">{{ selectedProvinceId ? '전체' : '시/도 선택' }}</option>
-                  <option v-for="region in districts" :key="region.regionId" :value="String(region.regionId)">
-                    {{ region.regionName }}
-                  </option>
-                </select>
-                <ChevronDown :size="15" class="select-chevron" />
-              </span>
-            </label>
-            <button
-              class="grid size-10 place-items-center rounded-lg bg-brand-50 text-brand-600 transition hover:bg-brand-100"
-              aria-label="필터 초기화"
-              title="필터 초기화"
-              @click="resetFilters"
-            >
-              <RotateCcw :size="17" />
-            </button>
-          </div>
+        <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_36px] items-end gap-2">
+          <label class="block">
+            <span class="mb-1 block px-1 text-[11px] font-black text-slate-500">시/도</span>
+            <span class="select-wrap select-wrap-full">
+              <select
+                v-model="selectedProvinceId"
+                class="select-control h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-3 pr-9 text-xs font-black text-slate-950 outline-none transition focus:border-brand-500 focus:bg-white"
+                aria-label="시도 선택"
+              >
+                <option value="">전체</option>
+                <option v-for="region in provinces" :key="region.regionId" :value="String(region.regionId)">
+                  {{ region.regionName }}
+                </option>
+              </select>
+              <ChevronDown :size="14" class="select-chevron" />
+            </span>
+          </label>
+          <label class="block">
+            <span class="mb-1 block px-1 text-[11px] font-black text-slate-500">시/군/구</span>
+            <span class="select-wrap select-wrap-full">
+              <select
+                v-model="selectedDistrictId"
+                class="select-control h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-3 pr-9 text-xs font-black text-slate-950 outline-none transition focus:border-brand-500 focus:bg-white disabled:cursor-not-allowed disabled:text-slate-400"
+                aria-label="시군구 선택"
+                :disabled="!selectedProvinceId"
+              >
+                <option value="">{{ selectedProvinceId ? '전체' : '시/도 선택' }}</option>
+                <option v-for="region in districts" :key="region.regionId" :value="String(region.regionId)">
+                  {{ region.regionName }}
+                </option>
+              </select>
+              <ChevronDown :size="14" class="select-chevron" />
+            </span>
+          </label>
+          <button
+            class="grid size-9 place-items-center rounded-lg bg-brand-50 text-brand-600 transition hover:bg-brand-100"
+            aria-label="필터 초기화"
+            title="필터 초기화"
+            @click="resetFilters"
+          >
+            <RotateCcw :size="16" />
+          </button>
         </div>
-
-        <p class="text-xs font-bold text-slate-500">
-          총 {{ totalElements.toLocaleString() }}개 여행지
-          <span v-if="keyword"> · "{{ keyword }}" 검색 결과</span>
-        </p>
+        <p v-if="keyword" class="text-xs font-bold text-slate-500">"{{ keyword }}" 검색 결과</p>
       </div>
 
-      <div class="grid lg:h-[560px] xl:h-[620px] lg:grid-cols-[390px_1fr] 2xl:grid-cols-[440px_1fr]">
-        <div class="max-h-[420px] space-y-3 overflow-y-auto border-b border-slate-200 p-4 lg:max-h-none lg:border-b-0 lg:border-r">
+        <div ref="listScroller" class="min-h-0 flex-1 overflow-y-auto border-b border-slate-200 md:border-b-0">
           <div v-if="isLoading && places.length === 0" class="grid h-64 place-items-center text-sm font-black text-slate-500">
             <span class="inline-flex items-center gap-2">
               <LoaderCircle :size="18" class="animate-spin" />
@@ -258,53 +378,72 @@ onMounted(async () => {
           <article
             v-for="place in places"
             :key="place.id"
-            class="brand-card grid cursor-pointer grid-cols-[76px_1fr_32px] gap-3 rounded-xl p-3 transition hover:border-brand-500"
-            @mouseenter="selectedPlaceId = place.id"
-            @click="emit('openPlace', place)"
+            class="group cursor-pointer border-b border-slate-100 bg-white p-4 transition hover:bg-slate-50"
+            :class="selectedPlaceId === place.id ? 'bg-brand-50/70 ring-1 ring-inset ring-brand-200' : ''"
+            @click="selectPlaceOnMap(place)"
           >
-            <SafeImage :src="place.thumbnailImage || place.image" :alt="place.title" class="size-19 rounded-lg object-cover" />
-            <div class="min-w-0">
-              <h3 class="truncate text-base font-black text-slate-950">{{ place.title }}</h3>
-              <p class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs font-bold text-slate-500">
-                <Star :size="14" class="text-amber-500" fill="currentColor" />
-                <span class="text-amber-500">{{ place.rating.toFixed(1) }}</span>
-                <span>리뷰 {{ place.reviewCount }}</span>
-                <span>· {{ place.category }}</span>
-              </p>
-              <p class="mt-1 truncate text-xs font-bold text-slate-500">{{ place.location }}</p>
-              <div class="mt-2 flex flex-wrap gap-1.5">
-                <span v-for="tag in place.tags.slice(0, 2)" :key="tag" class="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-700">
-                  {{ tag }}
-                </span>
-              </div>
-              <button class="mt-2 rounded-md bg-brand-100 px-2 py-1 text-[11px] font-black text-brand-500" @click.stop="openAddModal(place)">
-                + 일정
-              </button>
+            <div class="relative aspect-[16/10] overflow-hidden rounded-lg bg-slate-100">
+              <SafeImage :src="place.thumbnailImage || place.image" :alt="place.title" class="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
             </div>
-            <button
-              class="like-button grid size-8 place-items-center rounded-full transition"
-              :class="likedIds.has(place.id) ? 'liked bg-red-50 text-red-500' : 'text-slate-300 hover:bg-slate-100 hover:text-red-400'"
-              aria-label="좋아요"
-              @click.stop="toggleLike(place)"
-            >
-              <Heart :size="20" :fill="likedIds.has(place.id) ? 'currentColor' : 'none'" />
-            </button>
+
+            <div class="mt-3 min-w-0">
+              <div class="flex min-w-0 items-start gap-3">
+                <h3 class="min-w-0 flex-1 truncate text-lg font-black text-slate-950">{{ place.title }}</h3>
+                <button
+                  class="grid size-9 shrink-0 place-items-center text-slate-300 transition hover:text-red-400"
+                  :class="likedIds.has(place.id) ? 'text-red-500' : ''"
+                  aria-label="좋아요"
+                  @click.stop="toggleLike(place)"
+                >
+                  <Heart :size="22" :fill="likedIds.has(place.id) ? 'currentColor' : 'none'" />
+                </button>
+              </div>
+              <p class="mt-1 flex min-w-0 items-center gap-1.5 text-xs font-bold text-slate-500">
+                <MapPin :size="14" class="shrink-0 text-brand-500" />
+                <span class="truncate">{{ place.location }}</span>
+              </p>
+              <p class="mt-1 line-clamp-2 text-sm font-semibold leading-5 text-slate-600">{{ place.description }}</p>
+              <div class="mt-3 flex items-center justify-between gap-2">
+                <span class="text-[11px] font-bold text-slate-400">리뷰 {{ place.reviewCount }}</span>
+              </div>
+            </div>
           </article>
 
-          <button
-            v-if="hasNext"
-            class="h-11 w-full rounded-xl bg-slate-100 text-sm font-black text-slate-700 hover:bg-slate-200 disabled:cursor-wait disabled:opacity-60"
-            :disabled="isLoading"
-            @click="loadPlaces(page + 1)"
-          >
-            {{ isLoading ? '불러오는 중' : '더보기' }}
-          </button>
-        </div>
-
-        <div class="relative h-[360px] overflow-hidden bg-[#f5f1e8] lg:h-auto">
-          <div class="absolute left-4 top-4 z-10 rounded-lg bg-white/95 px-3 py-2 text-xs font-black text-slate-700 shadow-sm">
-            Kakao Map
+          <div ref="loadMoreTarget" class="grid min-h-14 place-items-center text-xs font-black text-slate-400">
+            <span v-if="isLoading && places.length > 0" class="inline-flex items-center gap-2">
+              <LoaderCircle :size="15" class="animate-spin" />
+              더 불러오는 중
+            </span>
+            <span v-else-if="hasNext">스크롤하면 더 불러옵니다</span>
           </div>
+        </div>
+      </aside>
+
+        <div class="relative h-[calc(100vh-128px)] overflow-hidden bg-[#f5f1e8] sm:h-[calc(100vh-132px)] md:order-2 md:h-full">
+          <div class="absolute left-3 right-3 top-3 z-20 flex flex-col gap-2 md:left-4 md:right-auto md:max-w-[calc(100%-2rem)]">
+            <div class="flex max-w-full gap-2 overflow-x-auto pb-1">
+              <button
+                v-for="category in categories"
+                :key="category.value"
+                class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-black shadow-md ring-1 transition"
+                :class="selectedCategory === category.value ? 'bg-brand-500 text-white ring-brand-500 hover:bg-brand-600' : 'bg-white text-slate-700 ring-slate-200 hover:text-brand-600'"
+                @click="selectedCategory = selectedCategory === category.value ? '' : category.value"
+              >
+                <component :is="getCategoryIcon(category)" :size="16" />
+                {{ category.label }}
+              </button>
+            </div>
+
+          </div>
+
+          <button
+            v-if="focusedPlace"
+            class="absolute left-4 top-16 z-20 inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50/95 px-3.5 py-2 text-xs font-black text-brand-600 shadow-md shadow-indigo-100/70 backdrop-blur transition hover:border-brand-300 hover:bg-white"
+            @click="showAllPlacesOnMap"
+          >
+            <MapPin :size="14" />
+            전체 핀 보기
+          </button>
 
           <KakaoMap
             class="absolute inset-0"
@@ -317,24 +456,41 @@ onMounted(async () => {
 
           <section
             v-if="selectedPlace"
-            class="absolute left-4 right-4 top-16 z-10 rounded-xl border border-slate-200 bg-white/95 p-4 shadow-lg backdrop-blur sm:left-auto sm:w-72"
+            class="absolute left-4 right-4 top-28 z-10 overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-xl backdrop-blur sm:right-auto sm:w-[340px]"
           >
-            <p class="text-xs font-black text-brand-500">{{ selectedPlace.category }}</p>
-            <h3 class="mt-1 text-base font-black text-slate-950">{{ selectedPlace.title }}</h3>
-            <p class="mt-1 text-xs font-bold text-slate-500">{{ selectedPlace.location }}</p>
-            <p class="mt-2 line-clamp-2 text-xs font-semibold leading-5 text-slate-600">{{ selectedPlace.description }}</p>
-            <div class="mt-3 flex gap-2">
-              <button class="h-8 flex-1 rounded-lg bg-brand-500 text-xs font-black text-white" @click="emit('openPlace', selectedPlace)">
-                상세 보기
+            <div class="relative aspect-[16/9] bg-slate-100">
+              <SafeImage :src="selectedPlace.thumbnailImage || selectedPlace.image" :alt="selectedPlace.title" class="h-full w-full object-cover" />
+              <button
+                class="absolute right-3 top-3 grid size-8 place-items-center rounded-full bg-white/95 text-slate-500 shadow-sm backdrop-blur transition hover:bg-white"
+                aria-label="선택 해제"
+                @click="selectedPlaceId = null"
+              >
+                <X :size="18" />
               </button>
-              <button class="h-8 rounded-lg bg-brand-100 px-3 text-[11px] font-black text-brand-600" @click="openAddModal(selectedPlace)">
-                + 일정
-              </button>
+            </div>
+            <div class="p-4">
+              <div class="flex items-center gap-2">
+                <span class="rounded-md bg-brand-50 px-2 py-1 text-[11px] font-black text-brand-600">{{ selectedPlace.category }}</span>
+                <span class="text-[11px] font-bold text-slate-400">리뷰 {{ selectedPlace.reviewCount }}</span>
+              </div>
+              <h3 class="mt-2 truncate text-lg font-black text-slate-950">{{ selectedPlace.title }}</h3>
+              <p class="mt-1 flex min-w-0 items-center gap-1.5 text-xs font-bold text-slate-500">
+                <MapPin :size="14" class="shrink-0 text-brand-500" />
+                <span class="truncate">{{ selectedPlace.location }}</span>
+              </p>
+              <p class="mt-2 line-clamp-3 text-sm font-semibold leading-6 text-slate-600">{{ selectedPlace.description }}</p>
+              <div class="mt-4 flex gap-2">
+                <button class="h-9 flex-1 rounded-lg bg-brand-500 text-xs font-black text-white transition hover:bg-brand-600" @click="emit('openPlace', selectedPlace)">
+                  상세 보기
+                </button>
+                <button class="h-9 rounded-lg bg-brand-100 px-4 text-[11px] font-black text-brand-600 transition hover:bg-brand-200" @click="openAddModal(selectedPlace)">
+                  일정
+                </button>
+              </div>
             </div>
           </section>
         </div>
       </div>
-    </div>
 
     <Transition name="modal-fade">
       <div v-if="showAddModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">

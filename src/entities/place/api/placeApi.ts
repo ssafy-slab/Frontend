@@ -40,11 +40,25 @@ export type PlaceWeatherForecast = {
   updatedAt: string | null
 }
 
+export type PlaceDailyWeatherForecast = {
+  forecastDate: string | null
+  dayLabel: string | null
+  minTemperature: number | string | null
+  maxTemperature: number | string | null
+  precipitationProbability: number | null
+  humidity: number | null
+  windSpeed: number | string | null
+  precipitationType: string | number | null
+  skyStatus: string | number | null
+  updatedAt: string | null
+}
+
 export type PlaceWeather = PlaceWeatherForecast & {
   available: boolean
   message: string | null
   feelsLikeTemperature: number | string | null
   forecasts: PlaceWeatherForecast[]
+  dailyForecasts: PlaceDailyWeatherForecast[]
 }
 
 export type NearbyFacilityType = 'GAS_STATION' | 'PHARMACY' | 'CONVENIENCE_STORE'

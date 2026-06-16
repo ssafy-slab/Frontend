@@ -31,8 +31,14 @@ function isActive(view: string, activeView: string) {
 </script>
 
 <template>
-  <header class="sticky top-0 z-50 w-full border-b border-slate-200 bg-white shadow-sm">
-    <div class="app-container grid h-16 grid-cols-[auto_1fr_auto] items-center gap-4">
+  <header
+    class="sticky top-0 z-50 w-full border-b border-slate-200 bg-white shadow-sm"
+    :class="activeView === 'explore' ? 'md:shadow-sm' : ''"
+  >
+    <div
+      class="app-container grid grid-cols-[auto_1fr_auto] items-center gap-4"
+      :class="activeView === 'explore' ? 'h-14 md:h-16' : 'h-16'"
+    >
       <button class="text-left" @click="emit('change', 'home')">
         <BrandLogo compact />
       </button>
@@ -53,7 +59,10 @@ function isActive(view: string, activeView: string) {
         </button>
       </nav>
 
-      <div class="flex items-center justify-end gap-2">
+      <div
+        class="items-center justify-end gap-2"
+        :class="activeView === 'explore' ? 'hidden sm:flex' : 'flex'"
+      >
         <template v-if="currentUser">
           <span class="max-w-28 truncate text-xs font-black text-slate-800 underline-offset-4 hover:text-brand-500 hover:underline" role="button" tabindex="0" @click="emit('change', 'profile')" @keyup.enter="emit('change', 'profile')">
             {{ currentUser.nickname }}

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { CalendarPlus, ChevronDown, Clock3, CloudSun, Droplets, Fuel, Heart, LoaderCircle, Map, MessageSquareText, Pill, Share2, Star, Store, Thermometer, Umbrella, Vote, Wind, X } from 'lucide-vue-next'
+import { CalendarPlus, ChevronDown, Clock3, Cloud, CloudRain, CloudSnow, CloudSun, Droplets, Fuel, Heart, LoaderCircle, Map as MapIcon, MessageSquareText, Pill, Share2, Star, Store, Sun, Thermometer, Umbrella, Vote, Wind, X } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
 import { fetchPlaceNearbyFacilities, fetchPlaceWeather } from '@/entities/place/api/placeApi'
-import type { NearbyFacilitiesResponse, NearbyFacilityType, PlaceWeather } from '@/entities/place/api/placeApi'
+import type { NearbyFacilitiesResponse, NearbyFacilityType, PlaceWeather, PlaceWeatherForecast } from '@/entities/place/api/placeApi'
 import { trips } from '@/entities/travel/model/travel'
 import type { Place } from '@/entities/travel/model/travel'
 import KakaoMap from '@/shared/ui/KakaoMap.vue'
@@ -27,6 +27,7 @@ const weatherMessage = ref('')
 const nearbyFacilitiesMessage = ref('')
 const showAddModal = ref(false)
 const showMapModal = ref(false)
+const showWeatherDetail = ref(false)
 let nearbyFacilitiesRequestId = 0
 const addMode = ref<'trip' | 'candidate'>('trip')
 const addDraft = reactive({
@@ -56,16 +57,6 @@ const weatherItems = computed(() => {
   if (!weather.value?.available) return []
   return [
     {
-      label: '현재 기온',
-      value: formatTemperature(weather.value.temperature),
-      icon: Thermometer,
-    },
-    {
-      label: '체감 온도',
-      value: formatTemperature(weather.value.feelsLikeTemperature),
-      icon: CloudSun,
-    },
-    {
       label: '강수 확률',
       value: formatPercent(weather.value.precipitationProbability),
       icon: Umbrella,
@@ -83,9 +74,35 @@ const weatherItems = computed(() => {
   ].filter((item) => item.value)
 })
 
-const weatherForecasts = computed(() => {
+const currentWeatherIcon = computed(() => {
+  if (!weather.value?.available) return CloudSun
+  return dailyWeatherIcon(weather.value.skyStatus, weather.value.precipitationType)
+})
+
+const weatherDailyForecasts = computed(() => {
   if (!weather.value?.available) return []
-  return (weather.value.forecasts ?? []).slice(0, 6)
+  return weather.value.dailyForecasts ?? []
+})
+
+const weatherDetailGroups = computed(() => {
+  if (!weather.value?.available) return []
+  const forecastsByDate = new Map<string, PlaceWeatherForecast[]>()
+  const forecasts = [...(weather.value.forecasts ?? [])].sort((left, right) => String(left.forecastAt).localeCompare(String(right.forecastAt)))
+
+  for (const forecast of forecasts) {
+    const dateKey = toForecastDateKey(forecast.forecastAt)
+    if (!dateKey) continue
+    forecastsByDate.set(dateKey, [...(forecastsByDate.get(dateKey) ?? []), forecast])
+  }
+
+  const dateKeys = [...forecastsByDate.keys()].sort().slice(0, 4)
+  const baseDateKey = dateKeys[0] ?? ''
+
+  return dateKeys.map((dateKey) => ({
+    dateKey,
+    label: weatherDetailDateLabel(dateKey, baseDateKey),
+    forecasts: forecastsByDate.get(dateKey) ?? [],
+  }))
 })
 
 const nearbyFacilityTypes: {
@@ -125,6 +142,13 @@ function formatTemperature(value: number | string | null) {
   return formatted ? `${formatted}°C` : null
 }
 
+function formatTemperatureRange(min: number | string | null, max: number | string | null) {
+  const minTemperature = formatTemperature(min)
+  const maxTemperature = formatTemperature(max)
+  if (minTemperature && maxTemperature) return `${minTemperature} / ${maxTemperature}`
+  return minTemperature || maxTemperature || null
+}
+
 function formatPercent(value: number | null) {
   return value === null ? null : `${value}%`
 }
@@ -134,21 +158,99 @@ function formatWind(value: number | string | null) {
   return formatted ? `${formatted}m/s` : null
 }
 
-function formatForecastTime(value: string | null) {
-  if (!value) return '시간 미정'
+function formatDailyForecastTitle(value: string | null, dayLabel: string | null) {
+  const label = displayDayLabel(dayLabel)
+  if (!value) return label
+  const date = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return label ? `${value} (${label})` : value
+  const formattedDate = new Intl.DateTimeFormat('ko-KR', {
+    month: 'long',
+    day: 'numeric',
+  }).format(date)
+  return label ? `${formattedDate} (${label})` : formattedDate
+}
+
+function formatWeatherDetailDate(value: string) {
+  const date = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('ko-KR', {
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short',
+  }).format(date)
+}
+
+function formatForecastHour(value: string | null) {
+  if (!value) return '--:--'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return new Intl.DateTimeFormat('ko-KR', {
-    month: 'numeric',
-    day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   }).format(date)
 }
 
+function toForecastDateKey(value: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value.slice(0, 10)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function weatherDetailDateLabel(dateKey: string, baseDateKey: string) {
+  const date = new Date(`${dateKey}T00:00:00`)
+  const baseDate = new Date(`${baseDateKey}T00:00:00`)
+  if (Number.isNaN(date.getTime()) || Number.isNaN(baseDate.getTime())) return formatWeatherDetailDate(dateKey)
+
+  const dayDiff = Math.round((date.getTime() - baseDate.getTime()) / 86_400_000)
+  const labels = ['오늘', '내일', '모레', '글피']
+  const suffix = dayDiff >= 0 && dayDiff < labels.length ? labels[dayDiff] : ''
+  const formattedDate = new Intl.DateTimeFormat('ko-KR', {
+    month: 'long',
+    day: 'numeric',
+  }).format(date)
+
+  return suffix ? `${formattedDate} (${suffix})` : formatWeatherDetailDate(dateKey)
+}
+
+function displayDayLabel(value: string | null) {
+  if (!value) return ''
+  const labels: Record<string, string> = {
+    MONDAY: '월요일',
+    TUESDAY: '화요일',
+    WEDNESDAY: '수요일',
+    THURSDAY: '목요일',
+    FRIDAY: '금요일',
+    SATURDAY: '토요일',
+    SUNDAY: '일요일',
+  }
+  return labels[value] ?? value
+}
+
+function openWeatherDetail() {
+  showWeatherDetail.value = true
+}
+
 function normalizeWeatherCode(value: string | number | null) {
   if (value === null) return null
   return String(value).trim().toUpperCase().replace(/[\s-]+/g, '_')
+}
+
+function dailyWeatherIcon(skyStatus: string | number | null, precipitationType: string | number | null) {
+  const precipitation = normalizeWeatherCode(precipitationType)
+  if (precipitation && precipitation !== 'NONE' && precipitation !== '0') {
+    if (precipitation.includes('SNOW') || precipitation === '3' || precipitation === '7') return CloudSnow
+    if (precipitation.includes('SHOWER') || precipitation === '4') return CloudSun
+    return CloudRain
+  }
+
+  const sky = normalizeWeatherCode(skyStatus)
+  if (sky === 'CLEAR' || sky === 'SUNNY' || sky === 'SKY_1' || sky === '1') return Sun
+  if (sky === 'MOSTLY_CLOUDY' || sky === 'PARTLY_CLOUDY' || sky === 'SKY_3' || sky === '3') return CloudSun
+  return Cloud
 }
 
 function displaySkyStatus(value: string | number | null) {
@@ -298,6 +400,7 @@ watch(
   },
   { immediate: true },
 )
+
 </script>
 
 <template>
@@ -349,7 +452,7 @@ watch(
                 공유
               </button>
               <button class="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-slate-100 text-sm font-black text-slate-700" @click="showMapModal = true">
-                <Map :size="17" />
+                <MapIcon :size="17" />
                 지도 보기
               </button>
             </div>
@@ -359,16 +462,16 @@ watch(
     </article>
 
     <div class="mt-5 grid gap-5 lg:grid-cols-[1fr_340px]">
-      <section class="brand-card rounded-2xl p-5">
+      <section class="brand-card flex min-h-[520px] flex-col rounded-2xl p-5 lg:min-h-[760px]">
         <h2 class="mb-4 flex items-center gap-2 text-lg font-black text-slate-950">
           <MessageSquareText :size="20" class="text-brand-500" />
           리뷰 작성
         </h2>
-        <div class="flex gap-3">
+        <div class="flex shrink-0 gap-3">
           <input v-model="review" class="brand-input h-11 min-w-0 flex-1 rounded-lg px-4 text-sm outline-none" placeholder="방문 팁이나 후기를 남겨보세요." @keyup.enter="addReview" />
           <button class="btn-primary h-11 rounded-lg px-5 text-sm" @click="addReview">등록</button>
         </div>
-        <div class="mt-4 space-y-3">
+        <div class="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
           <article v-for="item in reviews" :key="`${item.author}-${item.text}`" class="rounded-lg bg-slate-50 p-4">
             <p class="text-sm font-black text-slate-950">{{ item.author }}</p>
             <p class="mt-1 text-sm text-slate-600">{{ item.text }}</p>
@@ -386,44 +489,61 @@ watch(
             </span>
           </div>
           <div v-else-if="weather?.available" class="grid gap-3 text-sm">
-            <p v-if="weather.skyStatus || weather.precipitationType" class="rounded-lg bg-brand-50 px-3 py-2">
-              <span class="block text-xs font-black text-brand-500">현재 상태</span>
-              <span class="mt-1 block font-black text-slate-900">
-                {{ displayWeatherState(weather.skyStatus, weather.precipitationType) }}
-              </span>
-            </p>
-            <p v-for="item in weatherItems" :key="item.label" class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-              <span class="inline-flex items-center gap-2 font-bold text-slate-500">
-                <component :is="item.icon" :size="16" />
-                {{ item.label }}
-              </span>
-              <span class="font-black text-slate-800">{{ item.value }}</span>
-            </p>
-            <p v-if="weather.precipitationOneHour" class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-              <span class="inline-flex items-center gap-2 font-bold text-slate-500"><Umbrella :size="16" /> 1시간 강수량</span>
-              <span class="font-black text-slate-800">{{ weather.precipitationOneHour }}</span>
-            </p>
-            <div v-if="weatherForecasts.length" class="mt-1 grid gap-2">
+            <div class="rounded-lg bg-brand-50 px-3 py-3">
+              <div class="flex items-center gap-3">
+                <span class="grid size-10 shrink-0 place-items-center rounded-lg bg-white text-brand-500 shadow-sm">
+                  <component :is="currentWeatherIcon" :size="20" />
+                </span>
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs font-black text-brand-500">오늘 날씨</p>
+                  <p class="mt-0.5 truncate font-black text-slate-900">{{ displayWeatherState(weather.skyStatus, weather.precipitationType) }}</p>
+                </div>
+                <div class="shrink-0 text-right">
+                  <p class="text-lg font-black text-slate-950">{{ formatTemperature(weather.temperature) ?? '-' }}</p>
+                  <p v-if="formatTemperature(weather.feelsLikeTemperature)" class="text-[11px] font-bold text-slate-500">체감 {{ formatTemperature(weather.feelsLikeTemperature) }}</p>
+                </div>
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <p v-for="item in weatherItems" :key="item.label" class="rounded-lg bg-slate-50 px-2.5 py-2">
+                <span class="flex items-center gap-1.5 text-[11px] font-bold text-slate-500">
+                  <component :is="item.icon" :size="16" />
+                  {{ item.label }}
+                </span>
+                <span class="mt-1 block font-black text-slate-800">{{ item.value }}</span>
+              </p>
+            </div>
+            <div v-if="weatherDailyForecasts.length" class="mt-1 grid gap-2">
               <h3 class="flex items-center gap-2 pt-2 text-sm font-black text-slate-950">
                 <Clock3 :size="16" class="text-brand-500" />
-                시간대별 단기예보
+                일별 예보
               </h3>
-              <article v-for="forecast in weatherForecasts" :key="forecast.forecastAt ?? `${forecast.temperature}-${forecast.updatedAt}`" class="rounded-lg border border-slate-200 bg-white px-3 py-3">
-                <div class="flex items-start justify-between gap-3">
-                  <div class="min-w-0">
-                    <p class="text-xs font-black text-brand-500">{{ formatForecastTime(forecast.forecastAt) }}</p>
+              <article v-for="forecast in weatherDailyForecasts" :key="forecast.forecastDate ?? `${forecast.dayLabel}-${forecast.updatedAt}`" class="rounded-lg border border-slate-200 bg-white px-3 py-3">
+                <div class="flex items-start gap-3">
+                  <div class="grid size-9 shrink-0 place-items-center rounded-lg bg-slate-50 text-brand-500">
+                    <component :is="dailyWeatherIcon(forecast.skyStatus, forecast.precipitationType)" :size="18" />
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <p class="text-xs font-black text-brand-500">{{ formatDailyForecastTitle(forecast.forecastDate, forecast.dayLabel) }}</p>
                     <p class="mt-1 truncate font-black text-slate-900">{{ displayWeatherState(forecast.skyStatus, forecast.precipitationType) }}</p>
                   </div>
-                  <span class="shrink-0 text-base font-black text-slate-950">{{ formatTemperature(forecast.temperature) ?? '-' }}</span>
+                  <span class="shrink-0 text-base font-black text-slate-950">{{ formatTemperatureRange(forecast.minTemperature, forecast.maxTemperature) ?? '-' }}</span>
                 </div>
                 <div class="mt-2 grid grid-cols-3 gap-2 text-[11px] font-bold text-slate-500">
                   <span>강수 {{ formatPercent(forecast.precipitationProbability) ?? '-' }}</span>
                   <span>습도 {{ formatPercent(forecast.humidity) ?? '-' }}</span>
                   <span>풍속 {{ formatWind(forecast.windSpeed) ?? '-' }}</span>
                 </div>
-                <p v-if="forecast.precipitationOneHour" class="mt-2 text-[11px] font-bold text-slate-500">1시간 강수량 {{ forecast.precipitationOneHour }}</p>
               </article>
             </div>
+            <button
+              v-if="weatherDetailGroups.length"
+              class="mt-1 inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white text-sm font-black text-slate-700 transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-600"
+              @click="openWeatherDetail"
+            >
+              <Clock3 :size="16" />
+              시간대별 날씨 보기
+            </button>
           </div>
           <div v-else class="rounded-lg bg-slate-50 p-4 text-sm font-bold leading-6 text-slate-500">
             {{ weatherMessage || '날씨 정보를 불러올 수 없습니다.' }}
@@ -448,7 +568,7 @@ watch(
               <h2 class="text-lg font-black text-slate-950">가장 가까운 주변 편의시설</h2>
               <p class="mt-1 text-xs font-bold text-slate-500">주유소 · 약국 · 편의점</p>
             </div>
-            <span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-500">가까운 순</span>
+            <span v-if="false" class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-500">가까운 순</span>
           </div>
 
           <div v-if="isNearbyFacilitiesLoading" class="grid h-28 place-items-center rounded-lg bg-slate-50 text-sm font-black text-slate-500">
@@ -566,6 +686,58 @@ watch(
           <button class="btn-primary mt-5 h-10 w-full rounded-lg text-sm" @click="submitAddPlace">
             {{ addMode === 'trip' ? '선택한 일정에 추가' : '팀 후보로 등록' }}
           </button>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="modal-fade">
+      <div v-if="showWeatherDetail" class="fixed inset-0 z-[90] grid place-items-center bg-slate-950/45 p-4 backdrop-blur-sm" @click.self="showWeatherDetail = false">
+        <section class="flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div class="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
+            <div class="min-w-0">
+              <p class="text-xs font-black text-brand-500">날씨 상세</p>
+              <h2 class="mt-1 truncate text-xl font-black text-slate-950">{{ displayPlace.title }}</h2>
+              <p class="mt-1 text-xs font-bold text-slate-500">날짜별 시간대 예보</p>
+            </div>
+            <button class="grid size-9 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-500 transition hover:bg-slate-200" aria-label="닫기" @click="showWeatherDetail = false">
+              <X :size="20" />
+            </button>
+          </div>
+
+          <div class="min-h-0 flex-1 overflow-y-auto p-5">
+            <div class="space-y-4">
+              <section v-for="group in weatherDetailGroups" :key="group.dateKey" class="rounded-xl border border-slate-200 bg-white p-4">
+                <div class="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p class="text-sm font-black text-slate-950">{{ group.label }}</p>
+                    <p class="mt-0.5 text-xs font-bold text-slate-500">{{ formatWeatherDetailDate(group.dateKey) }}</p>
+                  </div>
+                  <span class="rounded-full bg-white px-2.5 py-1 text-xs font-black text-slate-500">{{ group.forecasts.length }}개 예보</span>
+                </div>
+                <div class="overflow-hidden rounded-lg border border-slate-100">
+                  <article
+                    v-for="forecast in group.forecasts"
+                    :key="forecast.forecastAt ?? `${forecast.temperature}-${forecast.updatedAt}`"
+                    class="grid grid-cols-[56px_1fr_64px] items-center gap-3 border-b border-slate-100 px-3 py-2.5 last:border-b-0 sm:grid-cols-[64px_1fr_72px_126px]"
+                  >
+                    <span class="text-xs font-black text-brand-500">{{ formatForecastHour(forecast.forecastAt) }}</span>
+                    <div class="flex min-w-0 items-center gap-3">
+                      <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-slate-50 text-brand-500">
+                        <component :is="dailyWeatherIcon(forecast.skyStatus, forecast.precipitationType)" :size="18" />
+                      </span>
+                      <span class="min-w-0 truncate text-sm font-black text-slate-900">{{ displayWeatherState(forecast.skyStatus, forecast.precipitationType) }}</span>
+                    </div>
+                    <span class="text-right text-sm font-black text-slate-950">{{ formatTemperature(forecast.temperature) ?? '-' }}</span>
+                    <div class="col-span-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-bold text-slate-500 sm:col-span-1">
+                      <span>강수 {{ formatPercent(forecast.precipitationProbability) ?? '-' }}</span>
+                      <span>습도 {{ formatPercent(forecast.humidity) ?? '-' }}</span>
+                      <span>{{ formatWind(forecast.windSpeed) ?? '-' }}</span>
+                    </div>
+                  </article>
+                </div>
+              </section>
+              </div>
+          </div>
         </section>
       </div>
     </Transition>
