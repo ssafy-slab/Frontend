@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import AuthPage from '@/pages/auth/ui/AuthPage.vue'
 import CommunityDetailPage from '@/pages/community/ui/CommunityDetailPage.vue'
 import CommunityEditorPage from '@/pages/community/ui/CommunityEditorPage.vue'
@@ -15,6 +16,8 @@ import AppHeader from '@/widgets/header/ui/AppHeader.vue'
 import MobileNav from '@/widgets/mobile-nav/ui/MobileNav.vue'
 import type { CommunityPost, Place, Trip } from '@/entities/travel/model/travel'
 import { places, posts, trips } from '@/entities/travel/model/travel'
+import { useAuthStore } from '@/stores/auth'
+import type { AuthUser } from '@/entities/auth/api/authApi'
 
 type ViewName =
   | 'home'
@@ -29,13 +32,9 @@ type ViewName =
   | 'login'
   | 'signup'
 
-type User = {
-  email: string
-  nickname: string
-}
-
 const activeView = ref<ViewName>('home')
-const currentUser = ref<User | null>(null)
+const authStore = useAuthStore()
+const { user: currentUser } = storeToRefs(authStore)
 const selectedPlace = ref<Place | null>(places[0] ?? null)
 const selectedTrip = ref<Trip | null>(trips[0] ?? null)
 const communityPosts = ref<CommunityPost[]>([...posts])
@@ -70,17 +69,13 @@ function showToast(message: string) {
   }, 1800)
 }
 
-function handleLogin(payload: { email: string; nickname?: string }) {
-  currentUser.value = {
-    email: payload.email,
-    nickname: payload.nickname || payload.email.split('@')[0] || '여행자',
-  }
-  showToast(`${currentUser.value.nickname}님 환영합니다.`)
+function handleLogin(payload: AuthUser) {
+  showToast(`${payload.nickname}님 환영합니다.`)
   changeView('home')
 }
 
 function handleLogout() {
-  currentUser.value = null
+  authStore.logout()
   showToast('로그아웃되었습니다.')
   changeView('home')
 }
@@ -104,7 +99,7 @@ function handleLogout() {
       <CommunityPage v-else-if="activeView === 'community'" key="community" :posts="communityPosts" @change="changeView" />
       <CommunityEditorPage v-else-if="activeView === 'community-write'" key="community-write" @change="changeView" @create-post="addPost" />
       <CommunityDetailPage v-else-if="activeView === 'community-detail'" key="community-detail" @change="changeView" @saved="showToast" />
-      <ProfilePage v-else-if="activeView === 'profile'" key="profile" :current-user="currentUser" @change="changeView" />
+      <ProfilePage v-else-if="activeView === 'profile'" key="profile" :current-user="currentUser" @change="changeView" @saved="showToast" />
       <AuthPage v-else key="auth" :mode="authMode" @change="changeView" @authenticated="handleLogin" />
     </Transition>
   </main>

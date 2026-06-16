@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AuthForm from '@/features/auth/ui/AuthForm.vue'
+import type { AuthUser } from '@/entities/auth/api/authApi'
 import BrandLogo from '@/shared/ui/BrandLogo.vue'
 
 defineProps<{
@@ -8,7 +9,7 @@ defineProps<{
 
 const emit = defineEmits<{
   change: [view: string]
-  authenticated: [payload: { email: string; nickname?: string }]
+  authenticated: [payload: AuthUser]
 }>()
 </script>
 
