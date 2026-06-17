@@ -88,8 +88,8 @@ async function submit() {
   }
 }
 
-function showOAuthPreparing(provider: string) {
-  errorMessage.value = `${provider} 로그인은 자체 로그인 이후에 연결할 예정입니다.`
+function startOAuthLogin(provider: 'kakao' | 'google' | 'naver') {
+  authStore.startOAuthLogin(provider)
 }
 </script>
 
@@ -168,25 +168,37 @@ function showOAuthPreparing(provider: string) {
       <button
         type="button"
         class="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#fee500] text-sm font-black text-slate-950"
-        @click="showOAuthPreparing('카카오')"
+        @click="startOAuthLogin('kakao')"
       >
-        <span class="grid size-5 place-items-center rounded-full bg-slate-950 text-[10px] font-black text-[#fee500]">K</span>
+        <svg class="size-5 shrink-0" viewBox="0 0 32 32" aria-hidden="true">
+          <path
+            fill="#191919"
+            d="M16 6.5C9.4 6.5 4 10.7 4 15.8c0 3.2 2.1 6 5.4 7.7l-1 3.7a.7.7 0 0 0 1 .8l4.4-2.9c.7.1 1.4.2 2.2.2 6.6 0 12-4.2 12-9.5S22.6 6.5 16 6.5Z"
+          />
+        </svg>
         카카오 로그인
       </button>
       <button
         type="button"
         class="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#03c75a] text-sm font-black text-white"
-        @click="showOAuthPreparing('네이버')"
+        @click="startOAuthLogin('naver')"
       >
-        <span class="text-base font-black">N</span>
+        <svg class="size-5 shrink-0" viewBox="0 0 32 32" aria-hidden="true">
+          <path fill="#fff" d="M19 16.7 12.6 7.5H7.2v17h5.8v-9.2l6.4 9.2h5.4v-17H19v9.2Z" />
+        </svg>
         네이버 로그인
       </button>
       <button
         type="button"
         class="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-sm font-black text-slate-800"
-        @click="showOAuthPreparing('구글')"
+        @click="startOAuthLogin('google')"
       >
-        <span class="font-black text-blue-500">G</span>
+        <svg class="size-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="#4285F4" d="M22.6 12.2c0-.8-.1-1.5-.2-2.2H12v4.2h5.9a5 5 0 0 1-2.2 3.3v2.7h3.6c2.1-1.9 3.3-4.8 3.3-8Z" />
+          <path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.8l-3.6-2.7c-1 .7-2.2 1-3.7 1-2.8 0-5.2-1.9-6.1-4.5H2.2v2.8A11 11 0 0 0 12 23Z" />
+          <path fill="#FBBC05" d="M5.9 14a6.6 6.6 0 0 1 0-4V7.2H2.2a11 11 0 0 0 0 9.6L5.9 14Z" />
+          <path fill="#EA4335" d="M12 5.5c1.6 0 3.1.6 4.2 1.7l3.2-3.2A10.8 10.8 0 0 0 12 1 11 11 0 0 0 2.2 7.2L5.9 10c.9-2.6 3.3-4.5 6.1-4.5Z" />
+        </svg>
         구글 로그인
       </button>
     </div>

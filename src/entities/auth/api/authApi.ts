@@ -20,6 +20,8 @@ export type SignupPayload = LoginPayload & {
   nickname: string
 }
 
+export type OAuthProvider = 'kakao' | 'google' | 'naver'
+
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8080'
 
 async function requestAuth(path: string, body: LoginPayload | SignupPayload): Promise<AuthResponse> {
@@ -70,6 +72,17 @@ export function login(payload: LoginPayload) {
 
 export function signup(payload: SignupPayload) {
   return requestAuth('/api/auth/signup', payload)
+}
+
+export function getOAuthAuthorizeUrl(provider: OAuthProvider) {
+  return new URL(`/api/oauth/${provider}/authorize`, apiBaseUrl).toString()
+}
+
+export function getDisplayEmail(email?: string) {
+  if (!email) return '로그인 후 이용할 수 있습니다.'
+  if (email.startsWith('kakao_') && email.endsWith('@oauth.slap.local')) return '카카오 소셜 로그인'
+  if (email.endsWith('@oauth.slap.local')) return '소셜 로그인 계정'
+  return email
 }
 
 export function updateProfile(token: string, payload: { nickname: string }) {

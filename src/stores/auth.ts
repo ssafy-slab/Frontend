@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import * as authApi from '@/entities/auth/api/authApi'
-import type { AuthUser, LoginPayload, SignupPayload } from '@/entities/auth/api/authApi'
+import type { AuthResponse, AuthUser, LoginPayload, OAuthProvider, SignupPayload } from '@/entities/auth/api/authApi'
 
 const storageKey = 'slap-auth'
 
@@ -59,6 +59,14 @@ export const useAuthStore = defineStore('auth', () => {
     return applyAuth(await authApi.signup(payload))
   }
 
+  function startOAuthLogin(provider: OAuthProvider) {
+    window.location.href = authApi.getOAuthAuthorizeUrl(provider)
+  }
+
+  function applyOAuthCallback(response: AuthResponse) {
+    return applyAuth(response)
+  }
+
   async function updateProfile(payload: { nickname: string }) {
     if (!accessToken.value) throw new Error('로그인이 필요합니다.')
     user.value = await authApi.updateProfile(accessToken.value, payload)
@@ -86,6 +94,8 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     login,
     signup,
+    startOAuthLogin,
+    applyOAuthCallback,
     updateProfile,
     deleteAccount,
     logout,

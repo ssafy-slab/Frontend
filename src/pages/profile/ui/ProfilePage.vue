@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { AlertTriangle } from 'lucide-vue-next'
+import { getDisplayEmail } from '@/entities/auth/api/authApi'
 import { useAuthStore } from '@/stores/auth'
 
 type User = {
@@ -23,6 +24,7 @@ const errorMessage = ref('')
 const isSaving = ref(false)
 const isDeleting = ref(false)
 const showDeleteModal = ref(false)
+const displayEmail = computed(() => getDisplayEmail(props.currentUser?.email))
 
 watch(
   () => props.currentUser?.nickname,
@@ -92,7 +94,7 @@ async function confirmDeleteAccount() {
         <h2 class="mt-4 text-xl font-black text-slate-950">
           {{ currentUser ? `${currentUser.nickname} 님` : '여행자' }}
         </h2>
-        <p class="mt-1 text-sm font-semibold text-slate-500">{{ currentUser?.email ?? '로그인 후 이용할 수 있습니다.' }}</p>
+        <p class="mt-1 text-sm font-semibold text-slate-500">{{ displayEmail }}</p>
         <button v-if="!currentUser" class="btn-primary mt-5 h-10 w-full rounded-lg text-sm" @click="emit('change', 'login')">
           로그인하러 가기
         </button>
@@ -110,7 +112,7 @@ async function confirmDeleteAccount() {
             <span class="mb-1.5 block text-xs font-black text-slate-950">이메일</span>
             <input
               class="h-10 w-full rounded-lg border border-slate-200 bg-slate-100 px-3 text-sm font-semibold text-slate-500 outline-none"
-              :value="currentUser?.email ?? ''"
+              :value="displayEmail"
               placeholder="email@example.com"
               readonly
             />
