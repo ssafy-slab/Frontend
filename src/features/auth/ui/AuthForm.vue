@@ -3,6 +3,7 @@ import { CheckCircle2, Circle } from 'lucide-vue-next'
 import { computed, reactive, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import type { AuthUser } from '@/entities/auth/api/authApi'
+import { getPasswordChecks, isPasswordValid } from '@/shared/lib/password'
 
 const props = defineProps<{
   mode: 'login' | 'signup'
@@ -28,12 +29,8 @@ const isSubmitting = ref(false)
 
 const isSignup = computed(() => props.mode === 'signup')
 const isEmailValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
-const passwordChecks = computed(() => [
-  { label: '8자 이상', valid: form.password.length >= 8 },
-  { label: '영문 포함', valid: /[A-Za-z]/.test(form.password) },
-  { label: '숫자 포함', valid: /\d/.test(form.password) },
-])
-const isPasswordValid = computed(() => passwordChecks.value.every((item) => item.valid))
+const passwordChecks = computed(() => getPasswordChecks(form.password))
+const passwordValid = computed(() => isPasswordValid(form.password))
 
 async function submit() {
   errorMessage.value = ''
@@ -53,7 +50,7 @@ async function submit() {
       errorMessage.value = '이름 또는 닉네임을 입력해주세요.'
       return
     }
-    if (!isPasswordValid.value) {
+    if (!passwordValid.value) {
       errorMessage.value = '비밀번호는 8자 이상이며 영문과 숫자를 모두 포함해야 합니다.'
       return
     }
@@ -148,7 +145,7 @@ function startOAuthLogin(provider: 'kakao' | 'google' | 'naver') {
   </form>
 
   <div v-if="!isSignup" class="mt-5 flex justify-center gap-8 text-sm font-bold text-slate-500">
-    <button type="button">비밀번호 찾기</button>
+    <button type="button" @click="emit('change', 'forgot-password')">비밀번호 찾기</button>
     <button type="button" @click="emit('change', 'signup')">회원가입</button>
   </div>
 

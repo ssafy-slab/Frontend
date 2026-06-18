@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import AuthPage from '@/pages/auth/ui/AuthPage.vue'
+import ForgotPasswordPage from '@/pages/auth/ui/ForgotPasswordPage.vue'
 import CommunityDetailPage from '@/pages/community/ui/CommunityDetailPage.vue'
 import CommunityEditorPage from '@/pages/community/ui/CommunityEditorPage.vue'
 import CommunityPage from '@/pages/community/ui/CommunityPage.vue'
@@ -31,6 +32,7 @@ type ViewName =
   | 'profile'
   | 'login'
   | 'signup'
+  | 'forgot-password'
 
 const activeView = ref<ViewName>('home')
 const authStore = useAuthStore()
@@ -96,8 +98,9 @@ function handleOAuthCallback() {
   const email = params.get('email')
   const nickname = params.get('nickname')
   const role = params.get('role')
+  const localAccount = params.get('localAccount')
 
-  if (!accessToken || !userId || !email || !nickname || !role) {
+  if (!accessToken || !userId || !email || !nickname || !role || localAccount === null) {
     showToast('소셜 로그인 응답을 확인할 수 없습니다.')
     window.history.replaceState({}, document.title, '/')
     changeView('login')
@@ -112,6 +115,7 @@ function handleOAuthCallback() {
       email,
       nickname,
       role,
+      localAccount: localAccount === 'true',
     },
   })
 
@@ -141,6 +145,7 @@ onMounted(handleOAuthCallback)
       <CommunityEditorPage v-else-if="activeView === 'community-write'" key="community-write" @change="changeView" @create-post="addPost" />
       <CommunityDetailPage v-else-if="activeView === 'community-detail'" key="community-detail" @change="changeView" @saved="showToast" />
       <ProfilePage v-else-if="activeView === 'profile'" key="profile" :current-user="currentUser" @change="changeView" @saved="showToast" />
+      <ForgotPasswordPage v-else-if="activeView === 'forgot-password'" key="forgot-password" @change="changeView" />
       <AuthPage v-else key="auth" :mode="authMode" @change="changeView" @authenticated="handleLogin" />
     </Transition>
   </main>

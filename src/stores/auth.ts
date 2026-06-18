@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import * as authApi from '@/entities/auth/api/authApi'
-import type { AuthResponse, AuthUser, LoginPayload, OAuthProvider, SignupPayload } from '@/entities/auth/api/authApi'
+import type { AuthResponse, AuthUser, LoginPayload, OAuthProvider, PasswordChangePayload, SignupPayload } from '@/entities/auth/api/authApi'
 
 const storageKey = 'slap-auth'
 
@@ -14,7 +14,13 @@ type StoredAuth = {
 function loadStoredAuth(): StoredAuth | null {
   try {
     const raw = window.localStorage.getItem(storageKey)
-    return raw ? (JSON.parse(raw) as StoredAuth) : null
+    if (!raw) return null
+    const stored = JSON.parse(raw) as StoredAuth
+    if (typeof stored.user?.localAccount !== 'boolean') {
+      window.localStorage.removeItem(storageKey)
+      return null
+    }
+    return stored
   } catch {
     return null
   }
@@ -80,6 +86,11 @@ export const useAuthStore = defineStore('auth', () => {
     logout()
   }
 
+  async function changePassword(payload: PasswordChangePayload) {
+    if (!accessToken.value) throw new Error('로그인이 필요합니다.')
+    await authApi.changePassword(accessToken.value, payload)
+  }
+
   function logout() {
     accessToken.value = ''
     tokenType.value = 'Bearer'
@@ -97,6 +108,7 @@ export const useAuthStore = defineStore('auth', () => {
     startOAuthLogin,
     applyOAuthCallback,
     updateProfile,
+    changePassword,
     deleteAccount,
     logout,
   }
