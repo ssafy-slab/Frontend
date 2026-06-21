@@ -43,7 +43,7 @@ function isActive(view: string, activeView: string) {
         <BrandLogo compact />
       </button>
 
-      <nav class="hidden h-full items-center justify-center gap-7 md:flex">
+      <nav class="hidden h-full items-center justify-center gap-10 md:flex lg:gap-12">
         <button
           v-for="item in navItems"
           :key="item.view"

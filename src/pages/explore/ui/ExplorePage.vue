@@ -4,6 +4,7 @@ import {
   Bike,
   ChevronDown,
   Heart,
+  HelpCircle,
   Landmark,
   LoaderCircle,
   MapPin,
@@ -12,6 +13,7 @@ import {
   Search,
   ShoppingBag,
   Sparkles,
+  Star,
   Utensils,
   X,
 } from 'lucide-vue-next'
@@ -31,6 +33,7 @@ const selectedProvinceId = ref('')
 const selectedDistrictId = ref('')
 const keywordInput = ref('')
 const keyword = ref('')
+const selectedSort = ref<'' | 'recommended' | 'reviewCount' | 'rating'>('')
 const page = ref(0)
 const places = ref<Place[]>([])
 const categories = ref<PlaceCategory[]>([])
@@ -70,6 +73,11 @@ const provinces = computed(() => regions.value.filter((region) => region.regionL
 const districts = computed(() =>
   regions.value.filter((region) => region.regionLevel === 2 && String(region.parentRegionId ?? '') === selectedProvinceId.value && region.placeCount > 0),
 )
+const sortOptions = [
+  { value: 'recommended' as const, label: '추천순' },
+  { value: 'reviewCount' as const, label: '리뷰 많은 순' },
+  { value: 'rating' as const, label: '평점 높은 순' },
+]
 const listSheetDragStyle = computed(() => {
   if (!isDraggingListSheet.value || !listSheet.value) return undefined
 
@@ -118,6 +126,7 @@ async function loadPlaces(nextPage = 0) {
       category: selectedCategory.value || undefined,
       regionId: selectedDistrictId.value ? Number(selectedDistrictId.value) : selectedProvinceId.value ? Number(selectedProvinceId.value) : undefined,
       keyword: keyword.value || undefined,
+      sort: selectedSort.value || undefined,
       page: nextPage,
       size: pageSize,
     })
@@ -162,7 +171,12 @@ function resetFilters() {
   selectedDistrictId.value = ''
   keywordInput.value = ''
   keyword.value = ''
+  selectedSort.value = ''
   void loadPlaces(0)
+}
+
+function toggleSort(sort: 'recommended' | 'reviewCount' | 'rating') {
+  selectedSort.value = selectedSort.value === sort ? '' : sort
 }
 
 function scheduleFilterReload() {
@@ -263,6 +277,10 @@ watch([selectedCategory, selectedDistrictId], () => {
   scheduleFilterReload()
 })
 
+watch(selectedSort, () => {
+  scheduleFilterReload()
+})
+
 onMounted(async () => {
   try {
     await loadFilters()
@@ -319,7 +337,7 @@ onBeforeUnmount(() => {
             <span class="select-wrap select-wrap-full">
               <select
                 v-model="selectedProvinceId"
-                class="select-control h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-3 pr-9 text-xs font-black text-slate-950 outline-none transition focus:border-brand-500 focus:bg-white"
+                class="select-control h-9 w-full rounded-md border border-slate-200 bg-slate-50 pl-3 pr-9 text-xs font-black text-slate-950 outline-none transition focus:border-brand-500 focus:bg-white"
                 aria-label="시도 선택"
               >
                 <option value="">전체</option>
@@ -335,7 +353,7 @@ onBeforeUnmount(() => {
             <span class="select-wrap select-wrap-full">
               <select
                 v-model="selectedDistrictId"
-                class="select-control h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-3 pr-9 text-xs font-black text-slate-950 outline-none transition focus:border-brand-500 focus:bg-white disabled:cursor-not-allowed disabled:text-slate-400"
+                class="select-control h-9 w-full rounded-md border border-slate-200 bg-slate-50 pl-3 pr-9 text-xs font-black text-slate-950 outline-none transition focus:border-brand-500 focus:bg-white disabled:cursor-not-allowed disabled:text-slate-400"
                 aria-label="시군구 선택"
                 :disabled="!selectedProvinceId"
               >
@@ -348,13 +366,43 @@ onBeforeUnmount(() => {
             </span>
           </label>
           <button
-            class="grid size-9 place-items-center rounded-lg bg-brand-50 text-brand-600 transition hover:bg-brand-100"
+            class="grid size-9 place-items-center rounded-md bg-brand-50 text-brand-600 transition hover:bg-brand-100"
             aria-label="필터 초기화"
             title="필터 초기화"
             @click="resetFilters"
           >
             <RotateCcw :size="16" />
           </button>
+        </div>
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <button
+              v-for="option in sortOptions"
+              :key="option.value"
+              type="button"
+              class="inline-flex items-center gap-1 font-bold transition"
+              style="font-size: 12px; line-height: 16px"
+              :class="selectedSort === option.value ? 'text-brand-500' : 'text-slate-500 hover:text-slate-800'"
+              :aria-pressed="selectedSort === option.value"
+              @click="toggleSort(option.value)"
+            >
+              <span
+                class="size-1 rounded-full transition"
+                :class="selectedSort === option.value ? 'bg-brand-500' : 'bg-slate-300'"
+              />
+              {{ option.label }}
+            </button>
+          </div>
+          <span
+            class="group relative grid size-5 shrink-0 cursor-help place-items-center text-slate-400"
+            tabindex="0"
+            aria-label="정렬 기준 안내"
+          >
+            <HelpCircle :size="13" />
+            <span class="pointer-events-none absolute right-0 top-7 z-30 hidden w-52 rounded-lg bg-slate-950 px-3 py-2 text-[11px] font-semibold leading-4 text-white shadow-lg group-hover:block group-focus:block">
+              추천순은 평균 별점과 리뷰 수를 함께 반영합니다.
+            </span>
+          </span>
         </div>
         <p v-if="keyword" class="text-xs font-bold text-slate-500">"{{ keyword }}" 검색 결과</p>
       </div>
@@ -404,7 +452,12 @@ onBeforeUnmount(() => {
               </p>
               <p class="mt-1 line-clamp-2 text-sm font-semibold leading-5 text-slate-600">{{ place.description }}</p>
               <div class="mt-3 flex items-center justify-between gap-2">
-                <span class="text-[11px] font-bold text-slate-400">리뷰 {{ place.reviewCount }}</span>
+                <span v-if="Number(place.reviewCount) > 0" class="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500">
+                  <Star :size="13" class="text-amber-400" fill="currentColor" />
+                  <span class="font-black text-slate-700">{{ place.rating.toFixed(1) }}</span>
+                  <span>· 리뷰 {{ place.reviewCount }}</span>
+                </span>
+                <span v-else class="text-[11px] font-bold text-slate-400">리뷰 없음</span>
               </div>
             </div>
           </article>
@@ -471,7 +524,12 @@ onBeforeUnmount(() => {
             <div class="p-4">
               <div class="flex items-center gap-2">
                 <span class="rounded-md bg-brand-50 px-2 py-1 text-[11px] font-black text-brand-600">{{ selectedPlace.category }}</span>
-                <span class="text-[11px] font-bold text-slate-400">리뷰 {{ selectedPlace.reviewCount }}</span>
+                <span v-if="Number(selectedPlace.reviewCount) > 0" class="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500">
+                  <Star :size="13" class="text-amber-400" fill="currentColor" />
+                  <span class="font-black text-slate-700">{{ selectedPlace.rating.toFixed(1) }}</span>
+                  <span>· 리뷰 {{ selectedPlace.reviewCount }}</span>
+                </span>
+                <span v-else class="text-[11px] font-bold text-slate-400">리뷰 없음</span>
               </div>
               <h3 class="mt-2 truncate text-lg font-black text-slate-950">{{ selectedPlace.title }}</h3>
               <p class="mt-1 flex min-w-0 items-center gap-1.5 text-xs font-bold text-slate-500">

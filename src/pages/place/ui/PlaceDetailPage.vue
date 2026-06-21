@@ -3,6 +3,9 @@ import { CalendarPlus, ChevronDown, Clock3, Cloud, CloudRain, CloudSnow, CloudSu
 import { computed, reactive, ref, watch } from 'vue'
 import { fetchPlaceNearbyFacilities, fetchPlaceWeather } from '@/entities/place/api/placeApi'
 import type { NearbyFacilitiesResponse, NearbyFacilityType, PlaceWeather, PlaceWeatherForecast } from '@/entities/place/api/placeApi'
+import { createPlaceReview, deleteMyPlaceReview, fetchPlaceReviews, updateMyPlaceReview } from '@/entities/review/api/reviewApi'
+import type { PlaceReview, PlaceReviewSummary } from '@/entities/review/api/reviewApi'
+import type { AuthUser } from '@/entities/auth/api/authApi'
 import { trips } from '@/entities/travel/model/travel'
 import type { Place } from '@/entities/travel/model/travel'
 import KakaoMap from '@/shared/ui/KakaoMap.vue'
@@ -10,6 +13,8 @@ import SafeImage from '@/shared/ui/SafeImage.vue'
 
 const props = defineProps<{
   place: Place | null
+  currentUser: AuthUser | null
+  accessToken: string
 }>()
 
 const emit = defineEmits<{
@@ -19,6 +24,13 @@ const emit = defineEmits<{
 
 const liked = ref(false)
 const review = ref('')
+const selectedRating = ref(0)
+const hoveredRating = ref(0)
+const reviews = ref<PlaceReview[]>([])
+const myReview = ref<PlaceReview | null>(null)
+const isReviewsLoading = ref(false)
+const isReviewSaving = ref(false)
+const reviewMessage = ref('')
 const weather = ref<PlaceWeather | null>(null)
 const nearbyFacilities = ref<NearbyFacilitiesResponse | null>(null)
 const isWeatherLoading = ref(false)
@@ -35,11 +47,6 @@ const addDraft = reactive({
   time: '13:00',
   memo: '',
 })
-const reviews = ref([
-  { author: '여행자민', text: '오전 시간대가 한적해서 사진 찍기 좋았어요.' },
-  { author: '지수', text: '주차 가능 여부가 표시되어 있어서 일정 짜기 편했습니다.' },
-])
-
 const displayPlace = computed(() => props.place)
 const mapMarkers = computed(() =>
   displayPlace.value
@@ -364,12 +371,75 @@ async function loadNearbyFacilities(placeId: number) {
   }
 }
 
-function addReview() {
-  const text = review.value.trim()
-  if (!text) return
-  reviews.value.unshift({ author: '나', text })
-  review.value = ''
-  emit('saved', '리뷰가 등록되었습니다.')
+function applyReviewSummary(summary: PlaceReviewSummary) {
+  reviews.value = summary.reviews
+  myReview.value = summary.myReview
+  selectedRating.value = summary.myReview?.rating ?? 0
+  review.value = summary.myReview?.content ?? ''
+  if (displayPlace.value) {
+    displayPlace.value.rating = Number(summary.averageRating)
+    displayPlace.value.reviewCount = String(summary.reviewCount)
+  }
+}
+
+async function loadReviews(placeId: number) {
+  isReviewsLoading.value = true
+  reviewMessage.value = ''
+  try {
+    applyReviewSummary(await fetchPlaceReviews(placeId, props.accessToken || undefined))
+  } catch (error) {
+    reviewMessage.value = error instanceof Error ? error.message : '리뷰를 불러오지 못했습니다.'
+  } finally {
+    isReviewsLoading.value = false
+  }
+}
+
+async function saveReview() {
+  if (!displayPlace.value) return
+  if (!props.currentUser || !props.accessToken) {
+    emit('saved', '리뷰를 작성하려면 로그인이 필요합니다.')
+    emit('change', 'login')
+    return
+  }
+  if (!selectedRating.value) {
+    reviewMessage.value = '별점을 선택해주세요.'
+    return
+  }
+
+  isReviewSaving.value = true
+  reviewMessage.value = ''
+  try {
+    const editing = Boolean(myReview.value)
+    const payload = { rating: selectedRating.value, content: review.value.trim() }
+    const summary = editing
+      ? await updateMyPlaceReview(displayPlace.value.id, props.accessToken, payload)
+      : await createPlaceReview(displayPlace.value.id, props.accessToken, payload)
+    applyReviewSummary(summary)
+    emit('saved', editing ? '리뷰가 저장되었습니다.' : '리뷰가 등록되었습니다.')
+  } catch (error) {
+    reviewMessage.value = error instanceof Error ? error.message : '리뷰를 저장하지 못했습니다.'
+  } finally {
+    isReviewSaving.value = false
+  }
+}
+
+async function deleteReview() {
+  if (!displayPlace.value || !props.accessToken || !myReview.value) return
+  if (!window.confirm('작성한 리뷰를 삭제할까요?')) return
+  isReviewSaving.value = true
+  reviewMessage.value = ''
+  try {
+    applyReviewSummary(await deleteMyPlaceReview(displayPlace.value.id, props.accessToken))
+    emit('saved', '리뷰가 삭제되었습니다.')
+  } catch (error) {
+    reviewMessage.value = error instanceof Error ? error.message : '리뷰를 삭제하지 못했습니다.'
+  } finally {
+    isReviewSaving.value = false
+  }
+}
+
+function reviewDate(value: string) {
+  return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium' }).format(new Date(value))
 }
 
 function openAddModal() {
@@ -397,8 +467,16 @@ watch(
     if (!placeId) return
     void loadWeather(placeId)
     void loadNearbyFacilities(placeId)
+    void loadReviews(placeId)
   },
   { immediate: true },
+)
+
+watch(
+  () => props.accessToken,
+  () => {
+    if (displayPlace.value?.id) void loadReviews(displayPlace.value.id)
+  },
 )
 
 </script>
@@ -467,14 +545,76 @@ watch(
           <MessageSquareText :size="20" class="text-brand-500" />
           리뷰 작성
         </h2>
-        <div class="flex shrink-0 gap-3">
-          <input v-model="review" class="brand-input h-11 min-w-0 flex-1 rounded-lg px-4 text-sm outline-none" placeholder="방문 팁이나 후기를 남겨보세요." @keyup.enter="addReview" />
-          <button class="btn-primary h-11 rounded-lg px-5 text-sm" @click="addReview">등록</button>
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p class="text-sm font-black text-slate-900">{{ myReview ? '내 리뷰 수정' : '이 장소는 어떠셨나요?' }}</p>
+            </div>
+            <div class="flex items-center gap-1" @mouseleave="hoveredRating = 0">
+              <button
+                v-for="score in 5"
+                :key="score"
+                type="button"
+                class="rounded p-0.5 transition hover:scale-110 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                :class="score <= (hoveredRating || selectedRating) ? 'text-amber-400' : 'text-slate-300'"
+                :aria-label="`${score}점 선택`"
+                @mouseenter="hoveredRating = score"
+                @focus="hoveredRating = score"
+                @blur="hoveredRating = 0"
+                @click="selectedRating = score"
+              >
+                <Star :size="28" :fill="score <= (hoveredRating || selectedRating) ? 'currentColor' : 'none'" />
+              </button>
+              <span class="ml-2 min-w-8 text-sm font-black text-slate-700">{{ selectedRating || '-' }}점</span>
+            </div>
+          </div>
+          <textarea
+            v-model="review"
+            maxlength="1000"
+            rows="3"
+            class="brand-input mt-4 w-full resize-none rounded-lg px-4 py-3 text-sm outline-none"
+            placeholder="방문 팁이나 후기를 남겨보세요. (선택)"
+          />
+          <div class="mt-3 flex items-center justify-between gap-3">
+            <p class="text-xs font-bold" :class="reviewMessage ? 'text-red-500' : 'text-slate-400'">
+              {{ reviewMessage || `${review.length}/1000` }}
+            </p>
+            <div class="flex gap-2">
+              <button
+                v-if="myReview"
+                class="h-10 rounded-lg bg-white px-4 text-sm font-black text-red-500 ring-1 ring-slate-200 hover:bg-red-50"
+                :disabled="isReviewSaving"
+                @click="deleteReview"
+              >
+                삭제
+              </button>
+              <button
+                class="btn-primary h-10 rounded-lg px-5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="isReviewSaving || (Boolean(currentUser) && !selectedRating)"
+                @click="saveReview"
+              >
+                {{ isReviewSaving ? '저장 중...' : myReview ? '수정' : '등록' }}
+              </button>
+            </div>
+          </div>
         </div>
         <div class="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-          <article v-for="item in reviews" :key="`${item.author}-${item.text}`" class="rounded-lg bg-slate-50 p-4">
-            <p class="text-sm font-black text-slate-950">{{ item.author }}</p>
-            <p class="mt-1 text-sm text-slate-600">{{ item.text }}</p>
+          <p v-if="isReviewsLoading" class="py-8 text-center text-sm font-bold text-slate-400">리뷰를 불러오는 중입니다.</p>
+          <p v-else-if="!reviews.length" class="py-8 text-center text-sm font-bold text-slate-400">첫 번째 별점을 남겨보세요.</p>
+          <article v-for="item in reviews" v-else :key="item.reviewId" class="rounded-lg bg-slate-50 p-4">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-sm font-black text-slate-950">
+                  {{ item.authorNickname }}
+                  <span v-if="item.mine" class="ml-1 text-xs text-brand-500">내 리뷰</span>
+                </p>
+                <div class="mt-1 flex items-center gap-1 text-amber-400" :aria-label="`${item.rating}점`">
+                  <Star v-for="score in 5" :key="score" :size="14" :fill="score <= item.rating ? 'currentColor' : 'none'" :class="score <= item.rating ? '' : 'text-slate-300'" />
+                </div>
+              </div>
+              <time class="text-xs font-semibold text-slate-400">{{ reviewDate(item.updatedAt) }}</time>
+            </div>
+            <p v-if="item.content" class="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-600">{{ item.content }}</p>
           </article>
         </div>
       </section>

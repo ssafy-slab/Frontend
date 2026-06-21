@@ -19,6 +19,7 @@ import type { CommunityPost, Place, Trip } from '@/entities/travel/model/travel'
 import { places, posts, trips } from '@/entities/travel/model/travel'
 import { useAuthStore } from '@/stores/auth'
 import type { AuthUser } from '@/entities/auth/api/authApi'
+import { fetchPlace } from '@/entities/place/api/placeApi'
 
 type ViewName =
   | 'home'
@@ -51,6 +52,14 @@ function changeView(view: string) {
 function openPlace(place: Place) {
   selectedPlace.value = place
   changeView('place-detail')
+}
+
+async function openPlaceById(placeId: number) {
+  try {
+    openPlace(await fetchPlace(placeId))
+  } catch {
+    showToast('여행지 정보를 불러오지 못했습니다.')
+  }
 }
 
 function openTrip(trip: Trip) {
@@ -138,13 +147,21 @@ onMounted(handleOAuthCallback)
     <Transition name="page-fade" mode="out-in">
       <HomePage v-if="activeView === 'home'" key="home" @change="changeView" @open-place="openPlace" />
       <ExplorePage v-else-if="activeView === 'explore'" key="explore" @open-place="openPlace" @saved="showToast" />
-      <PlaceDetailPage v-else-if="activeView === 'place-detail'" key="place-detail" :place="selectedPlace" @change="changeView" @saved="showToast" />
+      <PlaceDetailPage
+        v-else-if="activeView === 'place-detail'"
+        key="place-detail"
+        :place="selectedPlace"
+        :current-user="currentUser"
+        :access-token="authStore.accessToken"
+        @change="changeView"
+        @saved="showToast"
+      />
       <SchedulePage v-else-if="activeView === 'schedule'" key="schedule" :current-user="currentUser" @open-trip="openTrip" @saved="showToast" />
       <ScheduleDetailPage v-else-if="activeView === 'schedule-detail'" key="schedule-detail" :trip="selectedTrip" @change="changeView" @saved="showToast" />
       <CommunityPage v-else-if="activeView === 'community'" key="community" :posts="communityPosts" @change="changeView" />
       <CommunityEditorPage v-else-if="activeView === 'community-write'" key="community-write" @change="changeView" @create-post="addPost" />
       <CommunityDetailPage v-else-if="activeView === 'community-detail'" key="community-detail" @change="changeView" @saved="showToast" />
-      <ProfilePage v-else-if="activeView === 'profile'" key="profile" :current-user="currentUser" @change="changeView" @saved="showToast" />
+      <ProfilePage v-else-if="activeView === 'profile'" key="profile" :current-user="currentUser" @change="changeView" @saved="showToast" @open-place="openPlaceById" />
       <ForgotPasswordPage v-else-if="activeView === 'forgot-password'" key="forgot-password" @change="changeView" />
       <AuthPage v-else key="auth" :mode="authMode" @change="changeView" @authenticated="handleLogin" />
     </Transition>

@@ -24,6 +24,7 @@ export type PlaceSearchParams = {
   category?: string
   regionId?: number
   keyword?: string
+  sort?: 'recommended' | 'reviewCount' | 'rating'
   page?: number
   size?: number
 }
@@ -114,6 +115,8 @@ type PlaceApiItem = {
   displayImageUrl: string | null
   thumbnailImageUrl: string | null
   detailImageUrl: string | null
+  averageRating: number | string | null
+  reviewCount: number | string | null
 }
 
 type PlacePageApiResponse = {
@@ -174,8 +177,8 @@ function toPlace(item: PlaceApiItem): Place {
     image: thumbnailImage,
     thumbnailImage,
     detailImage,
-    rating: 0,
-    reviewCount: '0',
+    rating: toNumber(item.averageRating, 0),
+    reviewCount: String(toNumber(item.reviewCount, 0)),
     tags: [displayCategory(item.category), item.regionName].filter(Boolean),
     marker: { top: '50%', left: '50%' },
     coordinates: {
@@ -195,6 +198,10 @@ export async function fetchPlaces(params: PlaceSearchParams): Promise<PlacePage>
     ...data,
     content: data.content.map(toPlace),
   }
+}
+
+export async function fetchPlace(placeId: number): Promise<Place> {
+  return toPlace(await requestJson<PlaceApiItem>(buildUrl(`/api/places/${placeId}`)))
 }
 
 export async function fetchPlaceFilters(): Promise<PlaceFilters> {
