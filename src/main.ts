@@ -10,6 +10,7 @@ const handledOAuthCallback = handleOAuthCallbackRedirect({
   pathname: window.location.pathname,
   search: window.location.search,
   storage: window.localStorage,
+  viewStorage: window.sessionStorage,
   fetch: window.fetch.bind(window),
   replace: (url) => window.location.replace(url),
 })

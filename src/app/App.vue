@@ -23,11 +23,13 @@ import type { AuthUser } from '@/entities/auth/api/authApi'
 import { fetchPlace } from '@/entities/place/api/placeApi'
 import { loadViewState, replaceViewHash, saveViewState } from '@/app/lib/viewState'
 import type { ViewName } from '@/app/lib/viewState'
+import { resolveAuthenticatedView } from '@/app/lib/authRedirect'
 
 const savedViewState = loadViewState(window.sessionStorage, window.location.hash)
-const activeView = ref<ViewName>(savedViewState.activeView ?? 'home')
 const authStore = useAuthStore()
 const { user: currentUser } = storeToRefs(authStore)
+const initialView = resolveViewChange(savedViewState.activeView ?? 'home', authStore.isAuthenticated).view as ViewName
+const activeView = ref<ViewName>(initialView)
 const selectedPlace = ref<Place | null>(savedViewState.selectedPlace ?? places[0] ?? null)
 const selectedTrip = ref<Trip | null>(savedViewState.selectedTrip ?? null)
 const selectedCommunityPostId = ref<number | null>(savedViewState.selectedCommunityPostId ?? null)
@@ -119,7 +121,7 @@ function showToast(message: string) {
 
 function handleLogin(payload: AuthUser) {
   showToast(`${payload.nickname}님 환영합니다.`)
-  changeView('home')
+  changeView(resolveAuthenticatedView())
 }
 
 function handleLogout() {

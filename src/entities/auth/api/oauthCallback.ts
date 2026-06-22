@@ -2,11 +2,13 @@ import type { AuthResponse } from './authApi'
 import { apiBaseUrl } from '@/shared/lib/apiBaseUrl'
 
 const authStorageKey = 'slap-auth'
+const viewStorageKey = 'slap-view-state'
 
 type OAuthCallbackRedirectOptions = {
   pathname: string
   search: string
   storage: Pick<Storage, 'setItem'>
+  viewStorage?: Pick<Storage, 'removeItem'>
   fetch: typeof fetch
   replace: (url: string) => void
 }
@@ -37,6 +39,7 @@ export async function handleOAuthCallbackRedirect(options: OAuthCallbackRedirect
   try {
     const auth = await exchangeOAuthTicket(ticket, options.fetch)
     options.storage.setItem(authStorageKey, JSON.stringify(auth))
+    options.viewStorage?.removeItem(viewStorageKey)
     options.replace('/')
   } catch {
     options.replace('/login')

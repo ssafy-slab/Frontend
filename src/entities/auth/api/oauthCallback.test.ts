@@ -8,6 +8,7 @@ afterEach(() => {
 describe('handleOAuthCallbackRedirect', () => {
   it('exchanges the callback ticket, stores auth, and removes the ticket URL', async () => {
     const stored: Record<string, string> = {}
+    const removed: string[] = []
     const replaced: string[] = []
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
@@ -32,6 +33,11 @@ describe('handleOAuthCallbackRedirect', () => {
       storage: {
         setItem(key, value) {
           stored[key] = value
+        },
+      },
+      viewStorage: {
+        removeItem(key: string) {
+          removed.push(key)
         },
       },
       fetch: fetchMock,
@@ -62,6 +68,7 @@ describe('handleOAuthCallbackRedirect', () => {
       },
     })
     expect(replaced).toEqual(['/'])
+    expect(removed).toEqual(['slap-view-state'])
   })
 
   it('redirects to login when the callback has no ticket', async () => {

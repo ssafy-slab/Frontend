@@ -19,5 +19,11 @@ describe('resolveViewChange', () => {
 
   it('does not block public views for guests', () => {
     expect(resolveViewChange('explore', false)).toEqual({ view: 'explore' })
+    expect(resolveViewChange('login', false)).toEqual({ view: 'login' })
+  })
+
+  it('does not redirect auth views just because the user is already authenticated', () => {
+    expect(resolveViewChange('login', true)).toEqual({ view: 'login' })
+    expect(resolveViewChange('signup', true)).toEqual({ view: 'signup' })
   })
 })
