@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
-import { MoreHorizontal, Plane, Plus, Trash2, X } from 'lucide-vue-next'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { Link, MoreHorizontal, Plane, Plus, Trash2, X } from 'lucide-vue-next'
 import type { Trip } from '@/entities/travel/model/travel'
 import { trips } from '@/entities/travel/model/travel'
+import { createTrip as createTripApi, deleteTrip as deleteTripApi, fetchTrips, joinTrip as joinTripApi } from '@/entities/travel/api/tripApi'
 
 type User = {
   email: string
   nickname: string
 }
 
-defineProps<{
+const props = defineProps<{
   currentUser: User | null
+  accessToken?: string
 }>()
 
 const emit = defineEmits<{
@@ -21,56 +23,138 @@ const emit = defineEmits<{
 const localTrips = ref<Trip[]>([...trips])
 const activePhase = ref<'upcoming' | 'past'>('upcoming')
 const showModal = ref(false)
+const showJoinModal = ref(false)
 const manageMode = ref(false)
 const deleteTarget = ref<Trip | null>(null)
+const isLoading = ref(false)
+const isSaving = ref(false)
+const loadError = ref('')
 const draft = reactive({
   title: '',
   destination: '',
   start: '',
   end: '',
+  tripType: 'TEAM',
+})
+const joinDraft = reactive({
+  inviteCode: '',
 })
 
 const visibleTrips = computed(() => localTrips.value.filter((trip) => trip.phase === activePhase.value))
 
-function createTrip() {
-  if (!draft.title.trim() || !draft.destination.trim()) return
+async function loadTrips() {
+  if (!props.accessToken) return
 
-  const trip: Trip = {
-    id: Date.now(),
-    title: draft.title.trim(),
-    destination: draft.destination.trim(),
-    period: `${draft.start || '시작일'} - ${draft.end || '종료일'}`,
-    description: `${draft.destination.trim()} 여행 후보를 만들었습니다. 장소를 추가하고 팀원과 조율해보세요.`,
-    image: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80',
-    members: ['나'],
-    status: 'AI가 일정 조율 중',
-    phase: 'upcoming',
+  isLoading.value = true
+  loadError.value = ''
+  try {
+    localTrips.value = await fetchTrips(props.accessToken)
+  } catch (error) {
+    loadError.value = error instanceof Error ? error.message : '여행 목록을 불러오지 못했습니다.'
+    emit('saved', loadError.value)
+  } finally {
+    isLoading.value = false
   }
+}
 
-  localTrips.value = [trip, ...localTrips.value]
-  activePhase.value = 'upcoming'
+function resetDraft() {
   draft.title = ''
   draft.destination = ''
   draft.start = ''
   draft.end = ''
-  showModal.value = false
-  emit('saved', '새 일정이 추가되었습니다.')
+  draft.tripType = 'TEAM'
+}
+
+async function createTrip() {
+  if (!draft.title.trim() || !draft.destination.trim()) return
+
+  isSaving.value = true
+  try {
+    const payload = {
+      title: draft.title.trim(),
+      description: `${draft.destination.trim()} 여행 후보를 만들었습니다. 장소를 추가하고 팀원과 조율해보세요.`,
+      tripType: draft.tripType,
+      startDate: draft.start || null,
+      endDate: draft.end || null,
+    }
+    const trip: Trip = props.accessToken
+      ? await createTripApi(props.accessToken, payload)
+      : {
+          id: Date.now(),
+          title: draft.title.trim(),
+          destination: draft.destination.trim(),
+          period: `${draft.start || '시작일'} - ${draft.end || '종료일'}`,
+          description: payload.description,
+          image: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80',
+          members: [props.currentUser?.nickname.slice(0, 2) || '나'],
+          status: 'AI가 일정 조율 중',
+          tripType: draft.tripType,
+          startDate: draft.start || null,
+          endDate: draft.end || null,
+          phase: 'upcoming',
+        }
+
+    localTrips.value = [trip, ...localTrips.value]
+    activePhase.value = 'upcoming'
+    resetDraft()
+    showModal.value = false
+    emit('saved', '새 일정이 추가되었습니다.')
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : '새 일정을 추가하지 못했습니다.')
+  } finally {
+    isSaving.value = false
+  }
 }
 
 function requestDeleteTrip(trip: Trip) {
-  if (trip.members.length > 1) {
+  if (!props.accessToken && trip.members.length > 1) {
     emit('saved', '초대된 유저가 있는 일정은 삭제할 수 없습니다.')
     return
   }
   deleteTarget.value = trip
 }
 
-function confirmDeleteTrip() {
+async function confirmDeleteTrip() {
   if (!deleteTarget.value) return
-  localTrips.value = localTrips.value.filter((item) => item.id !== deleteTarget.value?.id)
-  emit('saved', `${deleteTarget.value.title} 일정이 삭제되었습니다.`)
-  deleteTarget.value = null
+  const target = deleteTarget.value
+  isSaving.value = true
+  try {
+    if (props.accessToken) await deleteTripApi(props.accessToken, target.id)
+    localTrips.value = localTrips.value.filter((item) => item.id !== target.id)
+    emit('saved', `${target.title} 일정이 삭제되었습니다.`)
+    deleteTarget.value = null
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : '일정을 삭제하지 못했습니다.')
+  } finally {
+    isSaving.value = false
+  }
 }
+
+async function joinTrip() {
+  const inviteCode = joinDraft.inviteCode.trim()
+  if (!inviteCode) return
+  if (!props.accessToken) {
+    emit('saved', '로그인이 필요합니다.')
+    return
+  }
+
+  isSaving.value = true
+  try {
+    const trip = await joinTripApi(props.accessToken, inviteCode)
+    localTrips.value = [trip, ...localTrips.value.filter((item) => item.id !== trip.id)]
+    activePhase.value = 'upcoming'
+    joinDraft.inviteCode = ''
+    showJoinModal.value = false
+    emit('saved', `${trip.title} 일정에 참여했습니다.`)
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : '초대 코드로 참여하지 못했습니다.')
+  } finally {
+    isSaving.value = false
+  }
+}
+
+onMounted(loadTrips)
+watch(() => props.accessToken, loadTrips)
 </script>
 
 <template>
@@ -93,6 +177,10 @@ function confirmDeleteTrip() {
         </button>
       </div>
       <div class="flex flex-wrap justify-start gap-2 sm:justify-end">
+        <button class="inline-flex items-center gap-1 rounded-lg bg-white px-3.5 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50" @click="showJoinModal = true">
+          <Link :size="15" />
+          초대 코드 참여
+        </button>
         <button class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-3.5 py-2 text-xs font-black text-slate-700 hover:bg-slate-200" @click="manageMode = !manageMode">
           <MoreHorizontal :size="15" />
           {{ manageMode ? '관리 종료' : '일정 관리' }}
@@ -102,6 +190,13 @@ function confirmDeleteTrip() {
         </button>
       </div>
     </div>
+
+    <p v-if="isLoading" class="mb-3 rounded-lg bg-brand-50 px-4 py-3 text-sm font-black text-brand-600">
+      내 여행 일정을 불러오는 중입니다.
+    </p>
+    <p v-else-if="loadError" class="mb-3 rounded-lg bg-red-50 px-4 py-3 text-sm font-black text-red-500">
+      {{ loadError }} 기존 임시 일정을 표시합니다.
+    </p>
 
     <div class="space-y-3">
       <article
@@ -138,8 +233,8 @@ function confirmDeleteTrip() {
             <button
               v-if="manageMode"
               class="inline-flex items-center gap-1 rounded-lg bg-red-50 px-3 py-2 text-xs font-black text-red-500 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="trip.members.length > 1"
-              :title="trip.members.length > 1 ? '초대된 유저가 없어야 삭제할 수 있습니다.' : '일정 삭제'"
+              :disabled="isSaving || (!accessToken && trip.members.length > 1)"
+              :title="!accessToken && trip.members.length > 1 ? '초대된 유저가 없어야 삭제할 수 있습니다.' : '일정 삭제'"
               @click.stop="requestDeleteTrip(trip)"
             >
               <Trash2 :size="14" />
@@ -177,18 +272,45 @@ function confirmDeleteTrip() {
               <span class="mb-1.5 block text-xs font-black text-slate-950">목적지</span>
               <input v-model="draft.destination" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="어디로 떠나시나요?" />
             </label>
+            <label class="block">
+              <span class="mb-1.5 block text-xs font-black text-slate-950">여행 유형</span>
+              <select v-model="draft.tripType" class="brand-input select-control h-10 w-full rounded-lg px-3 text-sm outline-none">
+                <option value="TEAM">TEAM</option>
+                <option value="PERSONAL">PERSONAL</option>
+              </select>
+            </label>
             <div>
               <span class="mb-1.5 block text-xs font-black text-slate-950">여행 기간</span>
               <div class="grid grid-cols-1 gap-2">
-                <input v-model="draft.start" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="시작일 (연도-월-일)" />
-                <input v-model="draft.end" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="종료일 (연도-월-일)" />
+                <input v-model="draft.start" type="date" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" />
+                <input v-model="draft.end" type="date" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" />
               </div>
             </div>
           </div>
 
-          <button class="btn-primary mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg text-sm" @click="createTrip">
+          <button class="btn-primary mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg text-sm disabled:cursor-not-allowed disabled:opacity-60" :disabled="isSaving" @click="createTrip">
             <Plus :size="16" />
-            일정 추가하기
+            {{ isSaving ? '추가 중' : '일정 추가하기' }}
+          </button>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="modal-fade">
+      <div v-if="showJoinModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
+        <section class="modal-panel w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
+          <div class="mb-4 flex items-center justify-between">
+            <h2 class="text-xl font-black text-slate-950">초대 코드로 참여</h2>
+            <button class="text-slate-500" aria-label="닫기" @click="showJoinModal = false">
+              <X :size="22" />
+            </button>
+          </div>
+          <label class="block">
+            <span class="mb-1.5 block text-xs font-black text-slate-950">초대 코드</span>
+            <input v-model="joinDraft.inviteCode" class="brand-input h-10 w-full rounded-lg px-3 text-sm uppercase outline-none" placeholder="ABCD1234" @keyup.enter="joinTrip" />
+          </label>
+          <button class="btn-primary mt-5 h-10 w-full rounded-lg text-sm disabled:cursor-not-allowed disabled:opacity-60" :disabled="isSaving" @click="joinTrip">
+            {{ isSaving ? '참여 중' : '참여하기' }}
           </button>
         </section>
       </div>
@@ -207,14 +329,14 @@ function confirmDeleteTrip() {
             {{ deleteTarget.title }} 일정은 삭제 후 되돌릴 수 없습니다.
           </p>
           <p class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-black text-red-500">
-            초대된 유저가 한 명도 없는 일정만 삭제할 수 있습니다.
+            로그인 상태에서는 서버 권한 기준에 따라 삭제됩니다.
           </p>
           <div class="mt-5 flex justify-end gap-2">
             <button class="h-10 rounded-lg bg-slate-100 px-4 text-sm font-black text-slate-700" @click="deleteTarget = null">
               취소
             </button>
-            <button class="h-10 rounded-lg bg-red-500 px-4 text-sm font-black text-white hover:bg-red-600" @click="confirmDeleteTrip">
-              삭제하기
+            <button class="h-10 rounded-lg bg-red-500 px-4 text-sm font-black text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60" :disabled="isSaving" @click="confirmDeleteTrip">
+              {{ isSaving ? '삭제 중' : '삭제하기' }}
             </button>
           </div>
         </section>

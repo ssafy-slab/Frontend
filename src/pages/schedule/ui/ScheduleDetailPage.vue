@@ -2,9 +2,11 @@
 import { computed, nextTick, reactive, ref } from 'vue'
 import { Bot, CalendarCheck, ChevronDown, Link, ListOrdered, MapPin, Plus, Send, SquareCheck, Trash2, UserCog, X } from 'lucide-vue-next'
 import type { Trip } from '@/entities/travel/model/travel'
+import { createInviteCode, deleteScheduleItem } from '@/entities/travel/api/tripApi'
 
-defineProps<{
+const props = defineProps<{
   trip: Trip | null
+  accessToken?: string
 }>()
 
 const emit = defineEmits<{
@@ -14,6 +16,7 @@ const emit = defineEmits<{
 
 type ScheduleItem = {
   id: number
+  scheduleItemId?: number
   date: string
   time: string
   title: string
@@ -43,6 +46,8 @@ const voted = ref('숙성도 노형본점')
 const showInviteModal = ref(false)
 const showMemberModal = ref(false)
 const showOrderModal = ref(false)
+const inviteCode = ref('')
+const isSaving = ref(false)
 const deleteScheduleTarget = ref<ScheduleItem | null>(null)
 const members = ref<Member[]>([
   { id: 1, name: '나', email: 'me@example.com', role: '소유자', owner: true },
@@ -107,6 +112,29 @@ function sendInvite() {
   showInviteModal.value = false
 }
 
+async function generateInviteCode() {
+  if (!props.trip?.id) return
+  if (!props.accessToken) {
+    emit('saved', '로그인이 필요합니다.')
+    return
+  }
+  if (props.trip.tripType && props.trip.tripType.toUpperCase() !== 'TEAM') {
+    emit('saved', 'TEAM 여행만 초대 코드를 만들 수 있습니다.')
+    return
+  }
+
+  isSaving.value = true
+  try {
+    const result = await createInviteCode(props.accessToken, props.trip.id)
+    inviteCode.value = result.inviteCode
+    emit('saved', '초대 코드가 준비되었습니다.')
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : '초대 코드를 만들지 못했습니다.')
+  } finally {
+    isSaving.value = false
+  }
+}
+
 function removeMember(memberId: number) {
   members.value = members.value.filter((member) => member.id !== memberId)
 }
@@ -115,12 +143,22 @@ function requestRemoveScheduleItem(item: ScheduleItem) {
   deleteScheduleTarget.value = item
 }
 
-function confirmRemoveScheduleItem() {
+async function confirmRemoveScheduleItem() {
   if (!deleteScheduleTarget.value) return
   const target = deleteScheduleTarget.value
-  scheduleItems.value = scheduleItems.value.filter((item) => item.id !== target.id)
-  deleteScheduleTarget.value = null
-  emit('saved', `${target.title}을 삭제했습니다.`)
+  isSaving.value = true
+  try {
+    if (props.accessToken && props.trip?.id && target.scheduleItemId) {
+      await deleteScheduleItem(props.accessToken, props.trip.id, target.scheduleItemId)
+    }
+    scheduleItems.value = scheduleItems.value.filter((item) => item.id !== target.id)
+    deleteScheduleTarget.value = null
+    emit('saved', `${target.title}을 삭제했습니다.`)
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : '일정을 삭제하지 못했습니다.')
+  } finally {
+    isSaving.value = false
+  }
 }
 </script>
 
@@ -359,8 +397,8 @@ function confirmRemoveScheduleItem() {
             <button class="h-10 rounded-lg bg-slate-100 px-4 text-sm font-black text-slate-700" @click="deleteScheduleTarget = null">
               취소
             </button>
-            <button class="btn-primary h-10 rounded-lg px-4 text-sm" @click="confirmRemoveScheduleItem">
-              확인
+            <button class="btn-primary h-10 rounded-lg px-4 text-sm disabled:cursor-not-allowed disabled:opacity-60" :disabled="isSaving" @click="confirmRemoveScheduleItem">
+              {{ isSaving ? '삭제 중' : '확인' }}
             </button>
           </div>
         </section>
@@ -415,6 +453,20 @@ function confirmRemoveScheduleItem() {
               <X :size="22" />
             </button>
           </div>
+          <section class="mb-4 rounded-xl bg-brand-50 p-3">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="text-xs font-black text-brand-500">TEAM 초대 코드</p>
+                <p class="mt-1 text-sm font-bold text-slate-600">코드를 공유하면 상대가 일정에 바로 참여할 수 있습니다.</p>
+              </div>
+              <button class="h-9 shrink-0 rounded-lg bg-brand-500 px-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-60" :disabled="isSaving" @click="generateInviteCode">
+                {{ isSaving ? '생성 중' : '코드 생성' }}
+              </button>
+            </div>
+            <p v-if="inviteCode" class="mt-3 rounded-lg bg-white px-3 py-2 text-center text-lg font-black tracking-widest text-slate-950">
+              {{ inviteCode }}
+            </p>
+          </section>
           <div class="space-y-3">
             <label class="block">
               <span class="mb-1.5 block text-xs font-black text-slate-950">이메일</span>

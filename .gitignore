@@ -40,3 +40,7 @@ __screenshots__/
 
 # Vite
 *.timestamp-*-*.mjs
+
+# Codex local files
+/.omx/
+/.superpowers/

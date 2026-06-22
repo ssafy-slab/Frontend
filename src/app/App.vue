@@ -17,6 +17,7 @@ import AppHeader from '@/widgets/header/ui/AppHeader.vue'
 import MobileNav from '@/widgets/mobile-nav/ui/MobileNav.vue'
 import type { CommunityPost, Place, Trip } from '@/entities/travel/model/travel'
 import { places, posts, trips } from '@/entities/travel/model/travel'
+import { resolveViewChange } from '@/app/lib/navigationGuard'
 import { useAuthStore } from '@/stores/auth'
 import type { AuthUser } from '@/entities/auth/api/authApi'
 import { fetchPlace } from '@/entities/place/api/placeApi'
@@ -45,7 +46,9 @@ const toastMessage = ref('')
 const authMode = computed(() => (activeView.value === 'signup' ? 'signup' : 'login'))
 
 function changeView(view: string) {
-  activeView.value = view as ViewName
+  const next = resolveViewChange(view, authStore.isAuthenticated)
+  activeView.value = next.view as ViewName
+  if (next.message) showToast(next.message)
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
@@ -156,8 +159,8 @@ onMounted(handleOAuthCallback)
         @change="changeView"
         @saved="showToast"
       />
-      <SchedulePage v-else-if="activeView === 'schedule'" key="schedule" :current-user="currentUser" @open-trip="openTrip" @saved="showToast" />
-      <ScheduleDetailPage v-else-if="activeView === 'schedule-detail'" key="schedule-detail" :trip="selectedTrip" @change="changeView" @saved="showToast" />
+      <SchedulePage v-else-if="activeView === 'schedule'" key="schedule" :current-user="currentUser" :access-token="authStore.accessToken" @open-trip="openTrip" @saved="showToast" />
+      <ScheduleDetailPage v-else-if="activeView === 'schedule-detail'" key="schedule-detail" :trip="selectedTrip" :access-token="authStore.accessToken" @change="changeView" @saved="showToast" />
       <CommunityPage v-else-if="activeView === 'community'" key="community" :posts="communityPosts" @change="changeView" />
       <CommunityEditorPage v-else-if="activeView === 'community-write'" key="community-write" @change="changeView" @create-post="addPost" />
       <CommunityDetailPage v-else-if="activeView === 'community-detail'" key="community-detail" @change="changeView" @saved="showToast" />

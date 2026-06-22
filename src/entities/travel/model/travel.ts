@@ -29,6 +29,8 @@ export type Place = {
 
 export type Trip = {
   id: number
+  tripId?: number
+  ownerUserId?: number
   title: string
   destination: string
   period: string
@@ -36,6 +38,11 @@ export type Trip = {
   image: string
   members: string[]
   status: string
+  tripType?: string | null
+  startDate?: string | null
+  endDate?: string | null
+  createdAt?: string
+  updatedAt?: string
   dday?: string
   phase: 'upcoming' | 'past'
 }
