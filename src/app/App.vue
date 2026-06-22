@@ -118,7 +118,7 @@ function handleLogout() {
         @saved="showToast"
       />
       <SchedulePage v-else-if="activeView === 'schedule'" key="schedule" :current-user="currentUser" :access-token="authStore.accessToken" @open-trip="openTrip" @saved="showToast" />
-      <ScheduleDetailPage v-else-if="activeView === 'schedule-detail'" key="schedule-detail" :trip="selectedTrip" :access-token="authStore.accessToken" @change="changeView" @saved="showToast" />
+      <ScheduleDetailPage v-else-if="activeView === 'schedule-detail'" key="schedule-detail" :trip="selectedTrip" :access-token="authStore.accessToken" :current-user="currentUser" @change="changeView" @saved="showToast" />
       <CommunityPage v-else-if="activeView === 'community'" key="community" :posts="communityPosts" @change="changeView" />
       <CommunityEditorPage v-else-if="activeView === 'community-write'" key="community-write" @change="changeView" @create-post="addPost" />
       <CommunityDetailPage v-else-if="activeView === 'community-detail'" key="community-detail" @change="changeView" @saved="showToast" />

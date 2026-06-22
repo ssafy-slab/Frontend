@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { Bot, CalendarCheck, ChevronDown, Link, ListOrdered, MapPin, Plus, Send, SquareCheck, Trash2, UserCog, X } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { CalendarCheck, ChevronDown, Link, ListOrdered, MapPin, Plus, Send, SquareCheck, Trash2, UserCog, X } from 'lucide-vue-next'
 import type { Trip } from '@/entities/travel/model/travel'
+import type { AuthUser } from '@/entities/auth/api/authApi'
+import { createChatMessagePayload, createChatSubscribePayload, fetchChatMessages, getChatSocketUrl } from '@/entities/chat/api/chatApi'
+import type { ChatMessageResponse, ChatSocketMessage } from '@/entities/chat/api/chatApi'
 import { createInviteCode, deleteScheduleItem, fetchTripMembers, updateTripMemberRole } from '@/entities/travel/api/tripApi'
 import type { TripMemberResponse, TripMemberRole } from '@/entities/travel/api/tripApi'
 import { canInviteTripMembers } from '@/entities/travel/model/tripAccess'
@@ -9,6 +12,7 @@ import { canInviteTripMembers } from '@/entities/travel/model/tripAccess'
 const props = defineProps<{
   trip: Trip | null
   accessToken?: string
+  currentUser?: AuthUser | null
 }>()
 
 const emit = defineEmits<{
@@ -29,10 +33,11 @@ type ScheduleItem = {
 }
 
 type Message = {
-  id: number
+  id: number | string
   author: string
   text: string
   mine?: boolean
+  pending?: boolean
 }
 
 type Member = {
@@ -52,6 +57,10 @@ const showOrderModal = ref(false)
 const inviteCode = ref('')
 const isSaving = ref(false)
 const isLoadingMembers = ref(false)
+const isLoadingMessages = ref(false)
+const chatSocket = ref<WebSocket | null>(null)
+const chatListEl = ref<HTMLElement | null>(null)
+const pendingChatMessages = ref<string[]>([])
 const deleteScheduleTarget = ref<ScheduleItem | null>(null)
 const canInviteMembers = computed(() => canInviteTripMembers(props.trip))
 const members = ref<Member[]>([])
@@ -65,11 +74,7 @@ const checklist = ref([
   { id: 2, text: '첫날 점심 후보 확정', done: false },
   { id: 3, text: '비 오는 날 대체 코스 추가', done: false },
 ])
-const messages = ref<Message[]>([
-  { id: 1, author: '지수', text: '우리 첫날 점심은 무조건 흑돼지 먹자! 공항 근처로.' },
-  { id: 2, author: 'AI', text: '공항 근처 흑돼지 식당 3곳을 후보로 등록할까요?' },
-  { id: 3, author: '나', text: '좋아. 투표 올려줘!', mine: true },
-])
+const messages = ref<Message[]>([])
 const scheduleItems = ref<ScheduleItem[]>([
   { id: 1, date: '2024.11.15(금)', time: '12:00~13:00', title: '공항 도착', note: '렌트카 픽업', category: '이동', location: '제주국제공항' },
   { id: 2, date: '2024.11.15(금)', time: '13:30~15:00', title: '점심 식사', note: '제주 흑돼지 명가', category: '음식점', location: '제주시 흑돼지 거리', active: true },
@@ -119,21 +124,144 @@ async function loadMembers() {
   }
 }
 
+function toChatMessage(message: ChatMessageResponse): Message {
+  return {
+    id: message.messageId,
+    author: message.senderNickname,
+    text: message.content,
+    mine: message.senderUserId === props.currentUser?.userId,
+  }
+}
+
+function scrollChatToBottom() {
+  window.setTimeout(() => {
+    if (!chatListEl.value) return
+    chatListEl.value.scrollTop = chatListEl.value.scrollHeight
+  }, 0)
+}
+
+function appendServerMessage(message: ChatMessageResponse) {
+  const nextMessage = toChatMessage(message)
+  const existingIndex = messages.value.findIndex((item) => item.id === nextMessage.id)
+  if (existingIndex >= 0) {
+    messages.value[existingIndex] = nextMessage
+    scrollChatToBottom()
+    return
+  }
+
+  const pendingIndex = messages.value.findIndex(
+    (item) => item.pending && item.mine && nextMessage.mine && item.text === nextMessage.text,
+  )
+  if (pendingIndex >= 0) {
+    messages.value[pendingIndex] = nextMessage
+    scrollChatToBottom()
+    return
+  }
+
+  messages.value.push(nextMessage)
+  scrollChatToBottom()
+}
+
+async function loadChatMessages() {
+  if (!props.accessToken || !props.trip?.id) return
+
+  isLoadingMessages.value = true
+  try {
+    messages.value = (await fetchChatMessages(props.accessToken, props.trip.id, 50)).map(toChatMessage)
+    scrollChatToBottom()
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : '채팅 메시지를 불러오지 못했습니다.')
+  } finally {
+    isLoadingMessages.value = false
+  }
+}
+
+function closeChatSocket() {
+  if (!chatSocket.value) return
+  chatSocket.value.close()
+  chatSocket.value = null
+}
+
+function flushPendingChatMessages() {
+  if (!props.trip?.id || chatSocket.value?.readyState !== WebSocket.OPEN) return
+  while (pendingChatMessages.value.length > 0) {
+    const content = pendingChatMessages.value.shift()
+    if (!content) continue
+    chatSocket.value.send(JSON.stringify(createChatMessagePayload(props.trip.id, content)))
+  }
+}
+
+function connectChatSocket() {
+  closeChatSocket()
+  if (!props.accessToken || !props.trip?.id) return
+
+  const tripId = props.trip.id
+  const socket = new WebSocket(getChatSocketUrl(props.accessToken))
+  chatSocket.value = socket
+
+  socket.addEventListener('open', () => {
+    socket.send(JSON.stringify(createChatSubscribePayload(tripId)))
+    flushPendingChatMessages()
+  })
+  socket.addEventListener('message', (event) => {
+    const data = JSON.parse(event.data) as ChatSocketMessage
+    if (data.type === 'MESSAGE' && data.message) {
+      appendServerMessage(data.message)
+      return
+    }
+    if (data.type === 'ERROR' && data.error) {
+      emit('saved', data.error)
+    }
+  })
+  socket.addEventListener('error', () => {
+    emit('saved', '채팅 서버에 연결하지 못했습니다.')
+  })
+}
+
+async function resetChat() {
+  messages.value = []
+  closeChatSocket()
+  await loadChatMessages()
+  connectChatSocket()
+}
+
 function sendMessage() {
   const text = messageText.value.trim()
   if (!text) return
-  messages.value.push({ id: Date.now(), author: '나', text, mine: true })
-  messageText.value = ''
-  nextTick(() => {
-    window.setTimeout(() => {
-      messages.value.push({ id: Date.now() + 1, author: 'AI', text: '좋아요. 해당 요청을 일정 후보에 반영해볼게요.' })
-    }, 280)
+  if (!props.trip?.id) {
+    emit('saved', '채팅을 보낼 일정을 찾지 못했습니다.')
+    return
+  }
+
+  messages.value.push({
+    id: `pending-${Date.now()}`,
+    author: props.currentUser?.nickname ?? '나',
+    text,
+    mine: true,
+    pending: true,
   })
+  messageText.value = ''
+  scrollChatToBottom()
+
+  if (chatSocket.value?.readyState === WebSocket.OPEN) {
+    try {
+      chatSocket.value.send(JSON.stringify(createChatMessagePayload(props.trip.id, text)))
+    } catch {
+      pendingChatMessages.value.push(text)
+      connectChatSocket()
+    }
+    return
+  }
+
+  pendingChatMessages.value.push(text)
+  if (!chatSocket.value || chatSocket.value.readyState === WebSocket.CLOSED || chatSocket.value.readyState === WebSocket.CLOSING) {
+    connectChatSocket()
+  }
 }
 
 function sendInvite() {
   if (!inviteDraft.email.trim()) return
-  messages.value.push({ id: Date.now(), author: 'AI', text: `${inviteDraft.email} 님에게 초대 메시지를 준비했습니다. 실제 참여는 초대 코드로 완료됩니다.` })
+  emit('saved', `${inviteDraft.email} 님은 초대 코드로 참여할 수 있습니다.`)
   inviteDraft.email = ''
   inviteDraft.message = ''
   inviteDraft.role = '편집 가능'
@@ -204,8 +332,15 @@ async function confirmRemoveScheduleItem() {
   }
 }
 
-onMounted(loadMembers)
+onMounted(() => {
+  loadMembers()
+  void resetChat()
+})
 watch(() => [props.accessToken, props.trip?.id, props.trip?.tripType], loadMembers)
+watch(() => [props.accessToken, props.trip?.id], () => {
+  void resetChat()
+})
+onBeforeUnmount(closeChatSocket)
 </script>
 
 <template>
@@ -278,27 +413,32 @@ watch(() => [props.accessToken, props.trip?.id, props.trip?.tripType], loadMembe
         <div class="border-b border-slate-200 bg-slate-100 px-4 py-3">
           <h2 class="font-black text-slate-950">일정 조율 채팅</h2>
         </div>
-        <div class="space-y-4 overflow-y-auto p-4">
+        <div ref="chatListEl" class="space-y-4 overflow-y-auto p-4">
+          <p v-if="isLoadingMessages" class="rounded-lg bg-brand-50 px-3 py-2 text-sm font-black text-brand-600">
+            이전 채팅을 불러오는 중입니다.
+          </p>
+          <p v-else-if="messages.length === 0" class="rounded-lg bg-slate-50 px-3 py-2 text-sm font-bold text-slate-500">
+            아직 채팅 메시지가 없습니다.
+          </p>
           <div
             v-for="message in messages"
             :key="message.id"
             class="message-pop flex gap-3"
             :class="message.mine ? 'justify-end' : ''"
           >
-            <span v-if="!message.mine" class="grid size-8 shrink-0 place-items-center rounded-full text-sm font-black" :class="message.author === 'AI' ? 'bg-brand-100 text-brand-600' : 'bg-red-100 text-red-700'">
-              {{ message.author === 'AI' ? 'AI' : '지' }}
+            <span v-if="!message.mine" class="grid size-8 shrink-0 place-items-center rounded-full bg-slate-100 text-sm font-black text-slate-700">
+              {{ message.author.slice(0, 1) }}
             </span>
             <p
               class="max-w-[76%] rounded-xl px-4 py-3 text-sm font-semibold leading-6"
-              :class="message.mine ? 'bg-brand-500 text-white' : message.author === 'AI' ? 'border border-brand-200 bg-brand-50 text-slate-800' : 'bg-slate-100 text-slate-800'"
+              :class="message.mine ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-800'"
             >
-              <Bot v-if="message.author === 'AI'" :size="17" class="mb-1 inline text-brand-500" />
               {{ message.text }}
             </p>
           </div>
         </div>
         <div class="flex items-center gap-3 border-t border-slate-200 p-4">
-          <input v-model="messageText" class="brand-input h-10 min-w-0 flex-1 rounded-full px-4 text-sm outline-none" placeholder="메시지 또는 AI에게 할 질문 입력..." @keyup.enter="sendMessage" />
+          <input v-model="messageText" data-testid="chat-input" class="brand-input h-10 min-w-0 flex-1 rounded-full px-4 text-sm outline-none" placeholder="메시지를 입력하세요" @keyup.enter="sendMessage" />
           <button class="grid size-10 place-items-center rounded-full bg-brand-500 text-white transition hover:scale-105" aria-label="전송" @click="sendMessage">
             <Send :size="20" />
           </button>
