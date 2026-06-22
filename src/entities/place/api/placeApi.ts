@@ -1,4 +1,5 @@
 import type { Place } from '@/entities/travel/model/travel'
+import { apiBaseUrl } from '@/shared/lib/apiBaseUrl'
 
 export type PlaceCategory = {
   value: string
@@ -131,7 +132,6 @@ export type PlacePage = Omit<PlacePageApiResponse, 'content'> & {
   content: Place[]
 }
 
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8080'
 export const defaultPlaceImage = '/images/default-place.svg'
 
 function buildUrl(path: string, params?: Record<string, string | number | undefined>) {

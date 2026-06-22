@@ -1,3 +1,5 @@
+import { apiBaseUrl } from '@/shared/lib/apiBaseUrl'
+
 export type ChatMessageResponse = {
   messageId: number
   tripId: number
@@ -27,8 +29,6 @@ export type ChatSocketMessage =
       message: null
       error: string
     }
-
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8080'
 
 export async function fetchChatMessages(token: string, tripId: number, limit = 50) {
   const url = new URL(`/api/chats/trips/${tripId}/messages`, apiBaseUrl)
