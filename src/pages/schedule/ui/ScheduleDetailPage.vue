@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { Bot, CalendarCheck, ChevronDown, Link, ListOrdered, MapPin, Plus, Send, SquareCheck, Trash2, UserCog, X } from 'lucide-vue-next'
 import type { Trip } from '@/entities/travel/model/travel'
-import { createInviteCode, deleteScheduleItem } from '@/entities/travel/api/tripApi'
+import { createInviteCode, deleteScheduleItem, fetchTripMembers, updateTripMemberRole } from '@/entities/travel/api/tripApi'
+import type { TripMemberResponse, TripMemberRole } from '@/entities/travel/api/tripApi'
+import { canInviteTripMembers } from '@/entities/travel/model/tripAccess'
 
 const props = defineProps<{
   trip: Trip | null
@@ -36,8 +38,9 @@ type Message = {
 type Member = {
   id: number
   name: string
-  email: string
+  email?: string
   role: string
+  apiRole?: TripMemberRole
   owner?: boolean
 }
 
@@ -48,12 +51,10 @@ const showMemberModal = ref(false)
 const showOrderModal = ref(false)
 const inviteCode = ref('')
 const isSaving = ref(false)
+const isLoadingMembers = ref(false)
 const deleteScheduleTarget = ref<ScheduleItem | null>(null)
-const members = ref<Member[]>([
-  { id: 1, name: '나', email: 'me@example.com', role: '소유자', owner: true },
-  { id: 2, name: '지수', email: 'jisu@example.com', role: '편집 가능' },
-  { id: 3, name: '민수', email: 'minsu@example.com', role: '편집 가능' },
-])
+const canInviteMembers = computed(() => canInviteTripMembers(props.trip))
+const members = ref<Member[]>([])
 const inviteDraft = reactive({
   email: '',
   role: '편집 가능',
@@ -85,6 +86,39 @@ const scheduleGroups = computed(() => {
   return Array.from(groups, ([date, items]) => ({ date, items }))
 })
 
+function getMemberRoleLabel(role: TripMemberRole) {
+  if (role === 'OWNER') return '소유자'
+  if (role === 'VIEWER') return '보기만 가능'
+  return '편집 가능'
+}
+
+function getApiMemberRole(role: string): 'EDITOR' | 'VIEWER' {
+  return role === '보기만 가능' ? 'VIEWER' : 'EDITOR'
+}
+
+function toMember(member: TripMemberResponse): Member {
+  return {
+    id: member.userId,
+    name: member.nickname,
+    role: getMemberRoleLabel(member.memberRole),
+    apiRole: member.memberRole,
+    owner: member.memberRole === 'OWNER',
+  }
+}
+
+async function loadMembers() {
+  if (!props.accessToken || !props.trip?.id || !canInviteMembers.value) return
+
+  isLoadingMembers.value = true
+  try {
+    members.value = (await fetchTripMembers(props.accessToken, props.trip.id)).map(toMember)
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : '팀원 목록을 불러오지 못했습니다.')
+  } finally {
+    isLoadingMembers.value = false
+  }
+}
+
 function sendMessage() {
   const text = messageText.value.trim()
   if (!text) return
@@ -99,13 +133,7 @@ function sendMessage() {
 
 function sendInvite() {
   if (!inviteDraft.email.trim()) return
-  members.value.push({
-    id: Date.now(),
-    name: inviteDraft.email.trim().slice(0, 2),
-    email: inviteDraft.email.trim(),
-    role: inviteDraft.role,
-  })
-  messages.value.push({ id: Date.now(), author: 'AI', text: `${inviteDraft.email} 님에게 초대장을 보냈습니다.` })
+  messages.value.push({ id: Date.now(), author: 'AI', text: `${inviteDraft.email} 님에게 초대 메시지를 준비했습니다. 실제 참여는 초대 코드로 완료됩니다.` })
   inviteDraft.email = ''
   inviteDraft.message = ''
   inviteDraft.role = '편집 가능'
@@ -119,7 +147,7 @@ async function generateInviteCode() {
     return
   }
   if (props.trip.tripType && props.trip.tripType.toUpperCase() !== 'TEAM') {
-    emit('saved', 'TEAM 여행만 초대 코드를 만들 수 있습니다.')
+    emit('saved', '팀 여행만 초대 코드를 만들 수 있습니다.')
     return
   }
 
@@ -135,8 +163,23 @@ async function generateInviteCode() {
   }
 }
 
-function removeMember(memberId: number) {
-  members.value = members.value.filter((member) => member.id !== memberId)
+async function changeMemberRole(member: Member) {
+  if (!props.accessToken || !props.trip?.id || member.owner) return
+  const nextRole = getApiMemberRole(member.role)
+  if (member.apiRole === nextRole) return
+
+  isSaving.value = true
+  try {
+    const updated = await updateTripMemberRole(props.accessToken, props.trip.id, member.id, nextRole)
+    const updatedMember = toMember(updated)
+    members.value = members.value.map((item) => (item.id === updatedMember.id ? updatedMember : item))
+    emit('saved', `${updatedMember.name} 권한을 변경했습니다.`)
+  } catch (error) {
+    member.role = getMemberRoleLabel(member.apiRole ?? 'EDITOR')
+    emit('saved', error instanceof Error ? error.message : '팀원 권한을 변경하지 못했습니다.')
+  } finally {
+    isSaving.value = false
+  }
 }
 
 function requestRemoveScheduleItem(item: ScheduleItem) {
@@ -160,6 +203,9 @@ async function confirmRemoveScheduleItem() {
     isSaving.value = false
   }
 }
+
+onMounted(loadMembers)
+watch(() => [props.accessToken, props.trip?.id, props.trip?.tripType], loadMembers)
 </script>
 
 <template>
@@ -172,7 +218,7 @@ async function confirmRemoveScheduleItem() {
         <p class="mt-2 text-sm font-bold text-slate-500">{{ trip?.period ?? '2024.11.15 - 2024.11.17' }} · {{ trip?.destination ?? '제주도' }}</p>
       </div>
       <div class="flex items-center gap-4">
-        <button class="flex items-center rounded-full pr-1 transition hover:scale-105" aria-label="참여자 관리" @click="showMemberModal = true">
+        <button v-if="canInviteMembers" class="flex items-center rounded-full pr-1 transition hover:scale-105" aria-label="참여자 관리" @click="showMemberModal = true">
           <span
             v-for="member in members.slice(0, 4)"
             :key="member.id"
@@ -181,7 +227,7 @@ async function confirmRemoveScheduleItem() {
             {{ member.name }}
           </span>
         </button>
-        <button class="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-black text-white hover:bg-brand-600" @click="showInviteModal = true">
+        <button v-if="canInviteMembers" class="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-black text-white hover:bg-brand-600" @click="showInviteModal = true">
           <Link :size="17" />
           팀원 초대
         </button>
@@ -406,7 +452,7 @@ async function confirmRemoveScheduleItem() {
     </Transition>
 
     <Transition name="modal-fade">
-      <div v-if="showMemberModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
+      <div v-if="showMemberModal && canInviteMembers" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
         <section class="modal-panel w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
           <div class="mb-4 flex items-center justify-between">
             <h2 class="flex items-center gap-2 text-xl font-black text-slate-950">
@@ -417,27 +463,29 @@ async function confirmRemoveScheduleItem() {
               <X :size="22" />
             </button>
           </div>
+          <p v-if="isLoadingMembers" class="rounded-lg bg-brand-50 px-3 py-2 text-sm font-black text-brand-600">
+            팀원 목록을 불러오는 중입니다.
+          </p>
           <div class="space-y-3">
             <article v-for="member in members" :key="member.id" class="flex items-center gap-3 rounded-xl bg-slate-50 p-3">
               <span class="grid size-9 place-items-center rounded-full bg-brand-100 text-sm font-black text-brand-600">{{ member.name }}</span>
               <div class="min-w-0 flex-1">
                 <p class="font-black text-slate-950">{{ member.name }}</p>
-                <p class="truncate text-xs font-semibold text-slate-500">{{ member.email }}</p>
+                <p class="truncate text-xs font-semibold text-slate-500">{{ member.email ?? '팀원' }}</p>
               </div>
-              <span class="select-wrap">
-                <select v-model="member.role" class="brand-input select-control h-9 rounded-lg px-2 text-xs font-bold outline-none" :disabled="member.owner">
-                  <option>소유자</option>
+              <span v-if="member.owner" class="rounded-lg bg-slate-200 px-3 py-2 text-xs font-black text-slate-700">
+                소유자
+              </span>
+              <span v-else class="select-wrap">
+                <select v-model="member.role" class="brand-input select-control h-9 rounded-lg px-2 text-xs font-bold outline-none" :disabled="isSaving" @change="changeMemberRole(member)">
                   <option>편집 가능</option>
                   <option>보기만 가능</option>
                 </select>
                 <ChevronDown :size="14" class="select-chevron" />
               </span>
-              <button v-if="!member.owner" class="rounded-lg bg-red-50 px-3 py-2 text-xs font-black text-red-500 hover:bg-red-100" @click="removeMember(member.id)">
-                내보내기
-              </button>
             </article>
           </div>
-          <button class="btn-primary mt-5 h-10 w-full rounded-lg text-sm" @click="showInviteModal = true; showMemberModal = false">
+          <button v-if="canInviteMembers" class="btn-primary mt-5 h-10 w-full rounded-lg text-sm" @click="showInviteModal = true; showMemberModal = false">
             새 팀원 초대하기
           </button>
         </section>
@@ -445,7 +493,7 @@ async function confirmRemoveScheduleItem() {
     </Transition>
 
     <Transition name="modal-fade">
-      <div v-if="showInviteModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
+      <div v-if="showInviteModal && canInviteMembers" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
         <section class="modal-panel w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
           <div class="mb-4 flex items-center justify-between">
             <h2 class="text-xl font-black text-slate-950">팀원 초대</h2>
@@ -456,7 +504,7 @@ async function confirmRemoveScheduleItem() {
           <section class="mb-4 rounded-xl bg-brand-50 p-3">
             <div class="flex items-center justify-between gap-3">
               <div>
-                <p class="text-xs font-black text-brand-500">TEAM 초대 코드</p>
+                <p class="text-xs font-black text-brand-500">팀 여행 초대 코드</p>
                 <p class="mt-1 text-sm font-bold text-slate-600">코드를 공유하면 상대가 일정에 바로 참여할 수 있습니다.</p>
               </div>
               <button class="h-9 shrink-0 rounded-lg bg-brand-500 px-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-60" :disabled="isSaving" @click="generateInviteCode">

@@ -85,6 +85,16 @@ export function getOAuthAuthorizeUrl(provider: OAuthProvider) {
   return new URL(`/api/oauth/${provider}/authorize`, apiBaseUrl).toString()
 }
 
+export function startOAuthAuthorize(provider: OAuthProvider) {
+  const form = document.createElement('form')
+  form.method = 'POST'
+  form.action = getOAuthAuthorizeUrl(provider)
+  form.style.display = 'none'
+
+  document.body.appendChild(form)
+  form.submit()
+}
+
 export function getDisplayEmail(email?: string) {
   if (!email) return '로그인하면 이용할 수 있습니다.'
   if (email.startsWith('kakao_') && email.endsWith('@oauth.slap.local')) return '카카오 소셜 로그인'

@@ -66,7 +66,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function startOAuthLogin(provider: OAuthProvider) {
-    window.location.href = authApi.getOAuthAuthorizeUrl(provider)
+    authApi.startOAuthAuthorize(provider)
   }
 
   function applyOAuthCallback(response: AuthResponse) {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import AuthPage from '@/pages/auth/ui/AuthPage.vue'
 import ForgotPasswordPage from '@/pages/auth/ui/ForgotPasswordPage.vue'
@@ -94,48 +94,6 @@ function handleLogout() {
   changeView('home')
 }
 
-function handleOAuthCallback() {
-  if (window.location.pathname !== '/oauth/callback') return
-
-  const params = new URLSearchParams(window.location.hash.replace(/^#/, ''))
-  if (params.get('error')) {
-    showToast('소셜 로그인에 실패했습니다.')
-    window.history.replaceState({}, document.title, '/')
-    changeView('login')
-    return
-  }
-
-  const accessToken = params.get('accessToken')
-  const userId = Number(params.get('userId'))
-  const email = params.get('email')
-  const nickname = params.get('nickname')
-  const role = params.get('role')
-  const localAccount = params.get('localAccount')
-
-  if (!accessToken || !userId || !email || !nickname || !role || localAccount === null) {
-    showToast('소셜 로그인 응답을 확인할 수 없습니다.')
-    window.history.replaceState({}, document.title, '/')
-    changeView('login')
-    return
-  }
-
-  const user = authStore.applyOAuthCallback({
-    tokenType: params.get('tokenType') || 'Bearer',
-    accessToken,
-    user: {
-      userId,
-      email,
-      nickname,
-      role,
-      localAccount: localAccount === 'true',
-    },
-  })
-
-  window.history.replaceState({}, document.title, '/')
-  handleLogin(user)
-}
-
-onMounted(handleOAuthCallback)
 </script>
 
 <template>

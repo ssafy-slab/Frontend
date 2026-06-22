@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createInviteCode, createTrip, deleteScheduleItem, deleteTrip, fetchTrips, joinTrip } from './tripApi'
+import { createInviteCode, createTrip, deleteScheduleItem, deleteTrip, fetchTripMembers, fetchTrips, joinTrip, updateTripMemberRole } from './tripApi'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -40,7 +40,7 @@ describe('tripApi', () => {
     expect(trips[0]).toMatchObject({
       id: 9,
       title: 'Busan trip',
-      destination: 'TEAM',
+      destination: '팀 여행',
       period: '2026-07-01 - 2026-07-03',
       members: ['ow', 'fr'],
       tripType: 'TEAM',
@@ -81,5 +81,34 @@ describe('tripApi', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(3, expect.stringContaining('/api/trips/9/invite-code'), expect.objectContaining({ method: 'POST' }))
     expect(fetchMock).toHaveBeenNthCalledWith(4, expect.stringContaining('/api/trips/join'), expect.objectContaining({ method: 'POST' }))
     expect(fetchMock).toHaveBeenNthCalledWith(5, expect.stringContaining('/api/trips/9/schedules/7'), expect.objectContaining({ method: 'DELETE' }))
+  })
+
+  it('loads trip members and updates a member role with documented endpoints', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (init?.method === 'PATCH') {
+        return new Response(
+          JSON.stringify({ userId: 20, nickname: 'member', memberRole: 'VIEWER', inviteStatus: 'ACCEPTED', joinedAt: '2026-06-22T11:00:00' }),
+          { status: 200 },
+        )
+      }
+      return new Response(
+        JSON.stringify([
+          { userId: 10, nickname: 'owner', memberRole: 'OWNER', inviteStatus: 'ACCEPTED', joinedAt: '2026-06-22T10:00:00' },
+          { userId: 20, nickname: 'member', memberRole: 'EDITOR', inviteStatus: 'ACCEPTED', joinedAt: '2026-06-22T11:00:00' },
+        ]),
+        { status: 200 },
+      )
+    })
+
+    const members = await fetchTripMembers('token', 9)
+    const updated = await updateTripMemberRole('token', 9, 20, 'VIEWER')
+
+    expect(members).toHaveLength(2)
+    expect(updated.memberRole).toBe('VIEWER')
+    expect(fetchMock).toHaveBeenNthCalledWith(1, expect.stringContaining('/api/trips/9/members'), expect.objectContaining({ method: 'GET' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, expect.stringContaining('/api/trips/9/members/20/role'), expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ memberRole: 'VIEWER' }),
+    }))
   })
 })

@@ -4,6 +4,7 @@ import { Link, MoreHorizontal, Plane, Plus, Trash2, X } from 'lucide-vue-next'
 import type { Trip } from '@/entities/travel/model/travel'
 import { trips } from '@/entities/travel/model/travel'
 import { createTrip as createTripApi, deleteTrip as deleteTripApi, fetchTrips, joinTrip as joinTripApi } from '@/entities/travel/api/tripApi'
+import { getTripTypeLabel } from '@/entities/travel/model/tripAccess'
 
 type User = {
   email: string
@@ -82,7 +83,7 @@ async function createTrip() {
       : {
           id: Date.now(),
           title: draft.title.trim(),
-          destination: draft.destination.trim(),
+          destination: getTripTypeLabel(draft.tripType),
           period: `${draft.start || '시작일'} - ${draft.end || '종료일'}`,
           description: payload.description,
           image: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80',
@@ -275,8 +276,8 @@ watch(() => props.accessToken, loadTrips)
             <label class="block">
               <span class="mb-1.5 block text-xs font-black text-slate-950">여행 유형</span>
               <select v-model="draft.tripType" class="brand-input select-control h-10 w-full rounded-lg px-3 text-sm outline-none">
-                <option value="TEAM">TEAM</option>
-                <option value="PERSONAL">PERSONAL</option>
+                <option value="TEAM">팀 여행</option>
+                <option value="PERSONAL">개인 여행</option>
               </select>
             </label>
             <div>

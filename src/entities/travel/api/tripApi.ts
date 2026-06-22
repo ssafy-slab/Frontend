@@ -1,12 +1,15 @@
 import type { Trip } from '@/entities/travel/model/travel'
+import { getTripTypeLabel } from '@/entities/travel/model/tripAccess'
 
 export type TripMemberResponse = {
   userId: number
   nickname: string
-  memberRole: string
+  memberRole: TripMemberRole
   inviteStatus: string
   joinedAt: string
 }
+
+export type TripMemberRole = 'OWNER' | 'EDITOR' | 'VIEWER' | 'MEMBER'
 
 export type TripResponse = {
   tripId: number
@@ -109,7 +112,7 @@ export function toTrip(item: TripResponse | TripListResponse): Trip {
     tripId: item.tripId,
     ownerUserId: item.ownerUserId,
     title: item.title,
-    destination: tripType,
+    destination: getTripTypeLabel(tripType),
     period: formatPeriod(item.startDate, item.endDate),
     description: item.description || '여행 설명이 없습니다.',
     image: fallbackTripImage,
@@ -150,6 +153,17 @@ export async function joinTrip(token: string, inviteCode: string) {
     method: 'POST',
     body: JSON.stringify({ inviteCode }),
   }))
+}
+
+export async function fetchTripMembers(token: string, tripId: number) {
+  return requestWithToken<TripMemberResponse[]>(`/api/trips/${tripId}/members`, token, { method: 'GET' })
+}
+
+export async function updateTripMemberRole(token: string, tripId: number, memberUserId: number, memberRole: 'EDITOR' | 'VIEWER') {
+  return requestWithToken<TripMemberResponse>(`/api/trips/${tripId}/members/${memberUserId}/role`, token, {
+    method: 'PATCH',
+    body: JSON.stringify({ memberRole }),
+  })
 }
 
 export async function deleteScheduleItem(token: string, tripId: number, scheduleItemId: number) {
