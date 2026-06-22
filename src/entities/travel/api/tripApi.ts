@@ -1,5 +1,6 @@
 import type { Trip } from '@/entities/travel/model/travel'
 import { getTripTypeLabel } from '@/entities/travel/model/tripAccess'
+import { apiBaseUrl } from '@/shared/lib/apiBaseUrl'
 
 export type TripMemberResponse = {
   userId: number
@@ -41,7 +42,6 @@ export type InviteCodeResponse = {
   inviteCode: string
 }
 
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8080'
 const fallbackTripImage = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80'
 
 function authHeaders(token: string, json = false) {

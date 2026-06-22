@@ -1,7 +1,7 @@
 import type { AuthResponse } from './authApi'
+import { apiBaseUrl } from '@/shared/lib/apiBaseUrl'
 
 const authStorageKey = 'slap-auth'
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8080'
 
 type OAuthCallbackRedirectOptions = {
   pathname: string

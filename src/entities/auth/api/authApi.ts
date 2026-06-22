@@ -1,3 +1,5 @@
+import { apiBaseUrl } from '@/shared/lib/apiBaseUrl'
+
 export type AuthUser = {
   userId: number
   email: string
@@ -32,8 +34,6 @@ export type PasswordResetPayload = {
 }
 
 export type OAuthProvider = 'kakao' | 'google' | 'naver'
-
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8080'
 
 async function requestAuth(path: string, body: LoginPayload | SignupPayload): Promise<AuthResponse> {
   const response = await fetch(new URL(path, apiBaseUrl), {

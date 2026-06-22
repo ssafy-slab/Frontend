@@ -1,3 +1,5 @@
+import { apiBaseUrl } from '@/shared/lib/apiBaseUrl'
+
 export type PlaceReview = {
   reviewId: number
   userId: number
@@ -40,8 +42,6 @@ export type MyPlaceReviewPage = {
   size: number
   totalPages: number
 }
-
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8080'
 
 async function request(
   placeId: number,
