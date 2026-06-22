@@ -2,7 +2,6 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Link, MoreHorizontal, Plane, Plus, Trash2, X } from 'lucide-vue-next'
 import type { Trip } from '@/entities/travel/model/travel'
-import { trips } from '@/entities/travel/model/travel'
 import { createTrip as createTripApi, deleteTrip as deleteTripApi, fetchTrips, joinTrip as joinTripApi } from '@/entities/travel/api/tripApi'
 import { getTripTypeLabel } from '@/entities/travel/model/tripAccess'
 
@@ -21,7 +20,7 @@ const emit = defineEmits<{
   saved: [message: string]
 }>()
 
-const localTrips = ref<Trip[]>([...trips])
+const localTrips = ref<Trip[]>([])
 const activePhase = ref<'upcoming' | 'past'>('upcoming')
 const showModal = ref(false)
 const showJoinModal = ref(false)
@@ -41,7 +40,9 @@ const joinDraft = reactive({
   inviteCode: '',
 })
 
-const visibleTrips = computed(() => localTrips.value.filter((trip) => trip.phase === activePhase.value))
+const upcomingTrips = computed(() => localTrips.value.filter((trip) => trip.phase === 'upcoming'))
+const pastTrips = computed(() => localTrips.value.filter((trip) => trip.phase === 'past'))
+const visibleTrips = computed(() => (activePhase.value === 'upcoming' ? upcomingTrips.value : pastTrips.value))
 
 async function loadTrips() {
   if (!props.accessToken) return
@@ -167,14 +168,14 @@ watch(() => props.accessToken, loadTrips)
           :class="activePhase === 'upcoming' ? 'border-b-2 border-brand-500 text-slate-950' : 'text-slate-500'"
           @click="activePhase = 'upcoming'"
         >
-          다가오는 일정 ({{ localTrips.filter((trip) => trip.phase === 'upcoming').length }})
+          다가오는 일정 ({{ upcomingTrips.length }})
         </button>
         <button
           class="pb-2.5"
           :class="activePhase === 'past' ? 'border-b-2 border-brand-500 text-slate-950' : 'text-slate-500'"
           @click="activePhase = 'past'"
         >
-          지난 일정 ({{ localTrips.filter((trip) => trip.phase === 'past').length }})
+          지난 일정 ({{ pastTrips.length }})
         </button>
       </div>
       <div class="flex flex-wrap justify-start gap-2 sm:justify-end">
@@ -252,7 +253,7 @@ watch(() => props.accessToken, loadTrips)
     </div>
 
     <Transition name="modal-fade">
-      <div v-if="showModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
+      <div v-if="showModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4">
         <section class="modal-panel w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl sm:max-w-md">
           <div class="mb-4 flex items-center justify-between">
             <h2 class="flex items-center gap-2 text-xl font-black text-slate-950">
@@ -298,7 +299,7 @@ watch(() => props.accessToken, loadTrips)
     </Transition>
 
     <Transition name="modal-fade">
-      <div v-if="showJoinModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
+      <div v-if="showJoinModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4">
         <section class="modal-panel w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
           <div class="mb-4 flex items-center justify-between">
             <h2 class="text-xl font-black text-slate-950">초대 코드로 참여</h2>
@@ -318,7 +319,7 @@ watch(() => props.accessToken, loadTrips)
     </Transition>
 
     <Transition name="modal-fade">
-      <div v-if="deleteTarget" class="fixed inset-0 z-[90] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
+      <div v-if="deleteTarget" class="fixed inset-0 z-[90] grid place-items-center bg-slate-900/55 p-4">
         <section class="modal-panel w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
           <div class="mb-4 flex items-center justify-between">
             <h2 class="text-xl font-black text-slate-950">일정을 삭제하시겠습니까?</h2>

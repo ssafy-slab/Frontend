@@ -78,6 +78,7 @@ const sortOptions = [
   { value: 'reviewCount' as const, label: '리뷰 많은 순' },
   { value: 'rating' as const, label: '평점 높은 순' },
 ]
+const upcomingTrips = computed(() => trips.filter((trip) => trip.phase === 'upcoming'))
 const listSheetDragStyle = computed(() => {
   if (!isDraggingListSheet.value || !listSheet.value) return undefined
 
@@ -551,7 +552,7 @@ onBeforeUnmount(() => {
       </div>
 
     <Transition name="modal-fade">
-      <div v-if="showAddModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
+      <div v-if="showAddModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4">
         <section class="modal-panel w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
           <div class="mb-4 flex items-center justify-between">
             <h2 class="text-xl font-black text-slate-950">일정에 장소 추가</h2>
@@ -565,7 +566,7 @@ onBeforeUnmount(() => {
               <span class="mb-1.5 block text-xs font-black text-slate-950">추가할 일정</span>
               <span class="select-wrap select-wrap-full">
                 <select v-model="addDraft.tripId" class="brand-input select-control h-10 w-full rounded-lg px-3 text-sm outline-none">
-                  <option v-for="trip in trips.filter((item) => item.phase === 'upcoming')" :key="trip.id" :value="String(trip.id)">
+                  <option v-for="trip in upcomingTrips" :key="trip.id" :value="String(trip.id)">
                     {{ trip.title }}
                   </option>
                 </select>

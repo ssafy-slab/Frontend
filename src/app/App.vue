@@ -17,7 +17,7 @@ import AppHeader from '@/widgets/header/ui/AppHeader.vue'
 import MobileNav from '@/widgets/mobile-nav/ui/MobileNav.vue'
 import { resolveViewChange } from '@/app/lib/navigationGuard'
 import type { Place, Trip } from '@/entities/travel/model/travel'
-import { places, trips } from '@/entities/travel/model/travel'
+import { places } from '@/entities/travel/model/travel'
 import { useAuthStore } from '@/stores/auth'
 import type { AuthUser } from '@/entities/auth/api/authApi'
 import { fetchPlace } from '@/entities/place/api/placeApi'
@@ -40,7 +40,7 @@ const activeView = ref<ViewName>('home')
 const authStore = useAuthStore()
 const { user: currentUser } = storeToRefs(authStore)
 const selectedPlace = ref<Place | null>(places[0] ?? null)
-const selectedTrip = ref<Trip | null>(trips[0] ?? null)
+const selectedTrip = ref<Trip | null>(null)
 const selectedCommunityPostId = ref<number | null>(null)
 const editingCommunityPostId = ref<number | null>(null)
 const toastMessage = ref('')

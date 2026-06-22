@@ -142,6 +142,11 @@ button {
     transform 200ms ease;
 }
 
+.modal-panel {
+  contain: layout paint;
+  will-change: opacity, transform;
+}
+
 .modal-fade-enter-from .modal-panel,
 .modal-fade-leave-to .modal-panel {
   opacity: 0;

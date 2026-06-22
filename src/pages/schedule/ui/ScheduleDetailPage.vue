@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { CalendarCheck, ChevronDown, Link, ListOrdered, MapPin, Plus, Send, SquareCheck, Trash2, UserCog, X } from 'lucide-vue-next'
+import { CalendarCheck, ChevronDown, Link, ListOrdered, MapPin, Plus, Send, Trash2, UserCog, X } from 'lucide-vue-next'
 import type { Trip } from '@/entities/travel/model/travel'
 import type { AuthUser } from '@/entities/auth/api/authApi'
 import { createChatMessagePayload, createChatSubscribePayload, fetchChatMessages, getChatSocketUrl } from '@/entities/chat/api/chatApi'
@@ -50,7 +50,6 @@ type Member = {
 }
 
 const messageText = ref('')
-const voted = ref('숙성도 노형본점')
 const showInviteModal = ref(false)
 const showMemberModal = ref(false)
 const showOrderModal = ref(false)
@@ -69,18 +68,9 @@ const inviteDraft = reactive({
   role: '편집 가능',
   message: '',
 })
-const checklist = ref([
-  { id: 1, text: '렌트카 예약', done: true },
-  { id: 2, text: '첫날 점심 후보 확정', done: false },
-  { id: 3, text: '비 오는 날 대체 코스 추가', done: false },
-])
+const checklist = ref<{ id: number; text: string; done: boolean }[]>([])
 const messages = ref<Message[]>([])
-const scheduleItems = ref<ScheduleItem[]>([
-  { id: 1, date: '2024.11.15(금)', time: '12:00~13:00', title: '공항 도착', note: '렌트카 픽업', category: '이동', location: '제주국제공항' },
-  { id: 2, date: '2024.11.15(금)', time: '13:30~15:00', title: '점심 식사', note: '제주 흑돼지 명가', category: '음식점', location: '제주시 흑돼지 거리', active: true },
-  { id: 3, date: '2024.11.16(토)', time: '10:00~12:00', title: '비자림 산책', note: '맑은 공기 마시며 힐링 타임', category: '관광명소', location: '제주시 구좌읍 비자숲길' },
-  { id: 4, date: '2024.11.16(토)', time: '14:00~16:00', title: '성산일출봉', note: '정상에서 기념 사진', category: '관광명소', location: '서귀포시 성산읍' },
-])
+const scheduleItems = ref<ScheduleItem[]>([])
 
 const doneCount = computed(() => checklist.value.filter((item) => item.done).length)
 const scheduleGroups = computed(() => {
@@ -349,8 +339,8 @@ onBeforeUnmount(closeChatSocket)
 
     <header class="brand-card mb-5 flex flex-col gap-4 rounded-xl p-5 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <h1 class="text-2xl font-black text-slate-950 sm:text-3xl">{{ trip?.title ?? '제주도 먹방 원정대' }}</h1>
-        <p class="mt-2 text-sm font-bold text-slate-500">{{ trip?.period ?? '2024.11.15 - 2024.11.17' }} · {{ trip?.destination ?? '제주도' }}</p>
+        <h1 class="text-2xl font-black text-slate-950 sm:text-3xl">{{ trip?.title ?? '\uC120\uD0DD\uB41C \uC77C\uC815\uC774 \uC5C6\uC2B5\uB2C8\uB2E4' }}</h1>
+        <p class="mt-2 text-sm font-bold text-slate-500">{{ trip?.period ?? '\uC77C\uC815 \uAE30\uAC04 \uBBF8\uC815' }} &middot; {{ trip?.destination ?? '\uBAA9\uC801\uC9C0 \uBBF8\uC815' }}</p>
       </div>
       <div class="flex items-center gap-4">
         <button v-if="canInviteMembers" class="flex items-center rounded-full pr-1 transition hover:scale-105" aria-label="참여자 관리" @click="showMemberModal = true">
@@ -447,24 +437,6 @@ onBeforeUnmount(closeChatSocket)
 
       <aside class="space-y-4">
         <section class="brand-card rounded-xl p-4">
-          <h3 class="font-black text-slate-950">Q. 첫날 점심 식당은?</h3>
-          <div class="mt-3 space-y-2">
-            <button
-              v-for="option in ['숙성도 노형본점', '돈사돈 본관']"
-              :key="option"
-              class="vote-option flex w-full items-center justify-between rounded-lg px-3 py-3 text-sm font-black transition"
-              :class="voted === option ? 'border-2 border-brand-500 bg-brand-50 text-brand-500' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'"
-              @click="voted = option"
-            >
-              {{ option }} {{ option === '숙성도 노형본점' ? '(2명)' : '(0명)' }}
-              <SquareCheck v-if="voted === option" :size="19" />
-              <span v-else class="size-5 rounded-full border-2 border-slate-400" />
-            </button>
-          </div>
-          <button class="btn-primary mt-3 h-10 w-full rounded-lg text-sm">일정에 추가하기</button>
-        </section>
-
-        <section class="brand-card rounded-xl p-4">
           <div class="flex items-center justify-between">
             <h3 class="flex items-center gap-2 font-black text-slate-950">
               <CalendarCheck :size="18" />
@@ -486,7 +458,7 @@ onBeforeUnmount(closeChatSocket)
     </div>
 
     <Transition name="modal-fade">
-      <div v-if="showOrderModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
+      <div v-if="showOrderModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4">
         <section class="modal-panel w-full max-w-lg rounded-2xl bg-white p-4 shadow-2xl sm:p-5">
           <div class="mb-3 flex items-start justify-between gap-4">
             <div>
@@ -565,7 +537,7 @@ onBeforeUnmount(closeChatSocket)
     </Transition>
 
     <Transition name="modal-fade">
-      <div v-if="deleteScheduleTarget" class="fixed inset-0 z-[90] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
+      <div v-if="deleteScheduleTarget" class="fixed inset-0 z-[90] grid place-items-center bg-slate-900/55 p-4">
         <section class="modal-panel w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
           <div class="mb-4 flex items-center justify-between">
             <h2 class="text-xl font-black text-slate-950">일정을 삭제하시겠습니까?</h2>
@@ -592,7 +564,7 @@ onBeforeUnmount(closeChatSocket)
     </Transition>
 
     <Transition name="modal-fade">
-      <div v-if="showMemberModal && canInviteMembers" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
+      <div v-if="showMemberModal && canInviteMembers" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4">
         <section class="modal-panel w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
           <div class="mb-4 flex items-center justify-between">
             <h2 class="flex items-center gap-2 text-xl font-black text-slate-950">
@@ -633,7 +605,7 @@ onBeforeUnmount(closeChatSocket)
     </Transition>
 
     <Transition name="modal-fade">
-      <div v-if="showInviteModal && canInviteMembers" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4 backdrop-blur-sm">
+      <div v-if="showInviteModal && canInviteMembers" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4">
         <section class="modal-panel w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
           <div class="mb-4 flex items-center justify-between">
             <h2 class="text-xl font-black text-slate-950">팀원 초대</h2>
