@@ -60,6 +60,7 @@ const isLoadingMessages = ref(false)
 const chatSocket = ref<WebSocket | null>(null)
 const chatListEl = ref<HTMLElement | null>(null)
 const pendingChatMessages = ref<string[]>([])
+const chatLoadRequestId = ref(0)
 const deleteScheduleTarget = ref<ScheduleItem | null>(null)
 const canInviteMembers = computed(() => canInviteTripMembers(props.trip))
 const members = ref<Member[]>([])
@@ -152,17 +153,29 @@ function appendServerMessage(message: ChatMessageResponse) {
   scrollChatToBottom()
 }
 
+function mergeLoadedChatMessages(loadedMessages: Message[]) {
+  const loadedIds = new Set(loadedMessages.map((message) => message.id))
+  const currentOnlyMessages = messages.value.filter((message) => !loadedIds.has(message.id))
+  messages.value = [...loadedMessages, ...currentOnlyMessages]
+}
+
 async function loadChatMessages() {
   if (!props.accessToken || !props.trip?.id) return
 
+  const requestId = ++chatLoadRequestId.value
   isLoadingMessages.value = true
   try {
-    messages.value = (await fetchChatMessages(props.accessToken, props.trip.id, 50)).map(toChatMessage)
+    const loadedMessages = (await fetchChatMessages(props.accessToken, props.trip.id, 50)).map(toChatMessage)
+    if (requestId !== chatLoadRequestId.value) return
+    mergeLoadedChatMessages(loadedMessages)
     scrollChatToBottom()
   } catch (error) {
+    if (requestId !== chatLoadRequestId.value) return
     emit('saved', error instanceof Error ? error.message : '채팅 메시지를 불러오지 못했습니다.')
   } finally {
-    isLoadingMessages.value = false
+    if (requestId === chatLoadRequestId.value) {
+      isLoadingMessages.value = false
+    }
   }
 }
 

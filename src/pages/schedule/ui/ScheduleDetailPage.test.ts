@@ -237,6 +237,46 @@ describe('ScheduleDetailPage collaboration controls', () => {
     expect(wrapper.text()).toContain('show right away')
   })
 
+  it('keeps a pending chat message when the initial message load finishes later', async () => {
+    let resolveMessages: (messages: Awaited<ReturnType<typeof fetchChatMessages>>) => void = () => {}
+    fetchChatMessages.mockReturnValue(new Promise((resolve) => {
+      resolveMessages = resolve
+    }))
+
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+        currentUser: { userId: 8, email: 'me@test.com', nickname: 'me', role: 'USER', localAccount: true },
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+
+    await wrapper.get('[data-testid="chat-input"]').setValue('do not erase me')
+    await wrapper.get('[data-testid="chat-input"]').trigger('keyup.enter')
+    expect(wrapper.text()).toContain('do not erase me')
+
+    resolveMessages([
+      {
+        messageId: 10,
+        tripId: 1,
+        senderUserId: 20,
+        senderNickname: 'member',
+        messageType: 'TEXT',
+        content: 'older server message',
+        createdAt: '2026-06-22T13:35:00',
+      },
+    ])
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('older server message')
+    expect(wrapper.text()).toContain('do not erase me')
+  })
+
   it('reconnects and sends the next chat when the socket was closed after a previous send', async () => {
     const wrapper = mount(ScheduleDetailPage, {
       props: {
