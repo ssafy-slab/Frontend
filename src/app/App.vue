@@ -15,9 +15,9 @@ import SchedulePage from '@/pages/schedule/ui/SchedulePage.vue'
 import AppFooter from '@/widgets/footer/ui/AppFooter.vue'
 import AppHeader from '@/widgets/header/ui/AppHeader.vue'
 import MobileNav from '@/widgets/mobile-nav/ui/MobileNav.vue'
-import type { CommunityPost, Place, Trip } from '@/entities/travel/model/travel'
-import { places, posts, trips } from '@/entities/travel/model/travel'
 import { resolveViewChange } from '@/app/lib/navigationGuard'
+import type { Place, Trip } from '@/entities/travel/model/travel'
+import { places, trips } from '@/entities/travel/model/travel'
 import { useAuthStore } from '@/stores/auth'
 import type { AuthUser } from '@/entities/auth/api/authApi'
 import { fetchPlace } from '@/entities/place/api/placeApi'
@@ -41,7 +41,8 @@ const authStore = useAuthStore()
 const { user: currentUser } = storeToRefs(authStore)
 const selectedPlace = ref<Place | null>(places[0] ?? null)
 const selectedTrip = ref<Trip | null>(trips[0] ?? null)
-const communityPosts = ref<CommunityPost[]>([...posts])
+const selectedCommunityPostId = ref<number | null>(null)
+const editingCommunityPostId = ref<number | null>(null)
 const toastMessage = ref('')
 const authMode = computed(() => (activeView.value === 'signup' ? 'signup' : 'login'))
 
@@ -70,9 +71,38 @@ function openTrip(trip: Trip) {
   changeView('schedule-detail')
 }
 
-function addPost(post: CommunityPost) {
-  communityPosts.value = [post, ...communityPosts.value]
-  showToast('커뮤니티 글이 등록되었습니다.')
+function openCommunityPost(postId: number) {
+  editingCommunityPostId.value = null
+  selectedCommunityPostId.value = postId
+  changeView('community-detail')
+}
+
+function handleCommunityPostCreated(postId: number) {
+  editingCommunityPostId.value = null
+  openCommunityPost(postId)
+}
+
+function openCommunityPostEditor(postId: number) {
+  editingCommunityPostId.value = postId
+  changeView('community-write')
+}
+
+function openCommunityWrite() {
+  editingCommunityPostId.value = null
+  changeView('community-write')
+}
+
+function handleCommunityPageChange(view: string) {
+  if (view === 'community-write') {
+    openCommunityWrite()
+    return
+  }
+  changeView(view)
+}
+
+function handleCommunityPostDeleted() {
+  selectedCommunityPostId.value = null
+  editingCommunityPostId.value = null
   changeView('community')
 }
 
@@ -119,9 +149,33 @@ function handleLogout() {
       />
       <SchedulePage v-else-if="activeView === 'schedule'" key="schedule" :current-user="currentUser" :access-token="authStore.accessToken" @open-trip="openTrip" @saved="showToast" />
       <ScheduleDetailPage v-else-if="activeView === 'schedule-detail'" key="schedule-detail" :trip="selectedTrip" :access-token="authStore.accessToken" :current-user="currentUser" @change="changeView" @saved="showToast" />
-      <CommunityPage v-else-if="activeView === 'community'" key="community" :posts="communityPosts" @change="changeView" />
-      <CommunityEditorPage v-else-if="activeView === 'community-write'" key="community-write" @change="changeView" @create-post="addPost" />
-      <CommunityDetailPage v-else-if="activeView === 'community-detail'" key="community-detail" @change="changeView" @saved="showToast" />
+      <CommunityPage
+        v-else-if="activeView === 'community'"
+        key="community"
+        :access-token="authStore.accessToken"
+        @change="handleCommunityPageChange"
+        @open-post="openCommunityPost"
+        @saved="showToast"
+      />
+      <CommunityEditorPage
+        v-else-if="activeView === 'community-write'"
+        key="community-write"
+        :access-token="authStore.accessToken"
+        :edit-post-id="editingCommunityPostId"
+        @change="changeView"
+        @created="handleCommunityPostCreated"
+        @saved="showToast"
+      />
+      <CommunityDetailPage
+        v-else-if="activeView === 'community-detail'"
+        key="community-detail"
+        :post-id="selectedCommunityPostId"
+        :access-token="authStore.accessToken"
+        @change="changeView"
+        @edit="openCommunityPostEditor"
+        @deleted="handleCommunityPostDeleted"
+        @saved="showToast"
+      />
       <ProfilePage v-else-if="activeView === 'profile'" key="profile" :current-user="currentUser" @change="changeView" @saved="showToast" @open-place="openPlaceById" />
       <ForgotPasswordPage v-else-if="activeView === 'forgot-password'" key="forgot-password" @change="changeView" />
       <AuthPage v-else key="auth" :mode="authMode" @change="changeView" @authenticated="handleLogin" />
