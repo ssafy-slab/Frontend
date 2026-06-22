@@ -213,6 +213,27 @@ describe('ScheduleDetailPage collaboration controls', () => {
     expect(wrapper.text()).toContain('안녕')
   })
 
+  it('subscribes to the chat socket before the previous message load finishes', async () => {
+    fetchChatMessages.mockReturnValue(new Promise(() => {}))
+
+    mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+        currentUser: { userId: 8, email: 'me@test.com', nickname: 'me', role: 'USER', localAccount: true },
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+
+    const socket = MockWebSocket.instances[0]
+    if (!socket) throw new Error('chat socket was not created')
+    expect(socket.sent).toContain(JSON.stringify({ type: 'SUBSCRIBE', tripId: 1 }))
+  })
+
   it('shows my chat message immediately after sending', async () => {
     const wrapper = mount(ScheduleDetailPage, {
       props: {

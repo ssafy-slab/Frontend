@@ -224,8 +224,8 @@ function connectChatSocket() {
 async function resetChat() {
   messages.value = []
   closeChatSocket()
-  await loadChatMessages()
   connectChatSocket()
+  await loadChatMessages()
 }
 
 function sendMessage() {

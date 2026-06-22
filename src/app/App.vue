@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import AuthPage from '@/pages/auth/ui/AuthPage.vue'
 import ForgotPasswordPage from '@/pages/auth/ui/ForgotPasswordPage.vue'
@@ -21,30 +21,34 @@ import { places } from '@/entities/travel/model/travel'
 import { useAuthStore } from '@/stores/auth'
 import type { AuthUser } from '@/entities/auth/api/authApi'
 import { fetchPlace } from '@/entities/place/api/placeApi'
+import { loadViewState, replaceViewHash, saveViewState } from '@/app/lib/viewState'
+import type { ViewName } from '@/app/lib/viewState'
 
-type ViewName =
-  | 'home'
-  | 'explore'
-  | 'place-detail'
-  | 'schedule'
-  | 'schedule-detail'
-  | 'community'
-  | 'community-write'
-  | 'community-detail'
-  | 'profile'
-  | 'login'
-  | 'signup'
-  | 'forgot-password'
-
-const activeView = ref<ViewName>('home')
+const savedViewState = loadViewState(window.sessionStorage, window.location.hash)
+const activeView = ref<ViewName>(savedViewState.activeView ?? 'home')
 const authStore = useAuthStore()
 const { user: currentUser } = storeToRefs(authStore)
-const selectedPlace = ref<Place | null>(places[0] ?? null)
-const selectedTrip = ref<Trip | null>(null)
-const selectedCommunityPostId = ref<number | null>(null)
-const editingCommunityPostId = ref<number | null>(null)
+const selectedPlace = ref<Place | null>(savedViewState.selectedPlace ?? places[0] ?? null)
+const selectedTrip = ref<Trip | null>(savedViewState.selectedTrip ?? null)
+const selectedCommunityPostId = ref<number | null>(savedViewState.selectedCommunityPostId ?? null)
+const editingCommunityPostId = ref<number | null>(savedViewState.editingCommunityPostId ?? null)
 const toastMessage = ref('')
 const authMode = computed(() => (activeView.value === 'signup' ? 'signup' : 'login'))
+
+watch(
+  [activeView, selectedPlace, selectedTrip, selectedCommunityPostId, editingCommunityPostId],
+  () => {
+    saveViewState(window.sessionStorage, {
+      activeView: activeView.value,
+      selectedPlace: selectedPlace.value,
+      selectedTrip: selectedTrip.value,
+      selectedCommunityPostId: selectedCommunityPostId.value,
+      editingCommunityPostId: editingCommunityPostId.value,
+    })
+    replaceViewHash(window.history, window.location.pathname, window.location.search, activeView.value)
+  },
+  { immediate: true },
+)
 
 function changeView(view: string) {
   const next = resolveViewChange(view, authStore.isAuthenticated)
