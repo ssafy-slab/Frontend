@@ -986,6 +986,67 @@ describe('ScheduleDetailPage collaboration controls', () => {
     expect(wrapper.text()).toContain('17:00 수정된 자유시간')
   })
 
+  it('asks before replacing an existing schedule when a new item has the same start time', async () => {
+    updateTripSchedule.mockResolvedValue({
+      scheduleItemId: 99,
+      tripId: 1,
+      placeId: null,
+      createdByUserId: 10,
+      dayNo: 1,
+      scheduleDate: '2026-07-01',
+      startTime: '15:00:00',
+      endTime: '16:30:00',
+      title: 'Replacement schedule',
+      memo: 'new memo',
+      sortOrder: 1,
+      createdAt: '2026-06-23T10:00:00',
+      updatedAt: '2026-06-23T11:10:00',
+    })
+
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-schedule-form"]').trigger('click')
+    await wrapper.get('[data-testid="schedule-title-input"]').setValue('Replacement schedule')
+    await wrapper.get('[data-testid="schedule-date-input"]').setValue('2026-07-01')
+    await wrapper.get('[data-testid="schedule-start-input"]').setValue('15:00')
+    await wrapper.get('[data-testid="schedule-end-input"]').setValue('16:30')
+    await wrapper.get('[data-testid="schedule-memo-input"]').setValue('new memo')
+    await wrapper.get('[data-testid="save-schedule-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="replace-schedule-modal"]').text()).toContain('자유시간')
+    expect(createTripSchedule).not.toHaveBeenCalled()
+    expect(updateTripSchedule).not.toHaveBeenCalled()
+
+    await wrapper.get('[data-testid="confirm-replace-schedule"]').trigger('click')
+    await flushPromises()
+
+    expect(updateTripSchedule).toHaveBeenCalledWith('token', 1, 99, {
+      placeId: null,
+      scheduleDate: '2026-07-01',
+      startTime: '15:00:00',
+      endTime: '16:30:00',
+      title: 'Replacement schedule',
+      memo: 'new memo',
+      dayNo: 1,
+      sortOrder: 1,
+    })
+    expect(createTripSchedule).not.toHaveBeenCalled()
+    expect(deleteScheduleItem).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('15:00 Replacement schedule')
+  })
+
   it('asks before replacing another schedule when an edited start time conflicts', async () => {
     fetchTripSchedules.mockResolvedValue([
       {

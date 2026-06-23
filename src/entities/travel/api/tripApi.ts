@@ -120,7 +120,13 @@ async function requestWithToken<T>(path: string, token: string, options: Request
     if (response.status === 401) throw new Error('로그인이 필요합니다.')
     if (response.status === 403) throw new Error('이 여행을 수정할 권한이 없습니다.')
     if (response.status === 404) throw new Error('여행 정보를 찾을 수 없습니다.')
-    if (response.status === 409) throw new Error('초대 코드 생성에 실패했습니다. 다시 시도해주세요.')
+    if (response.status === 409 && path.endsWith('/invite-code')) {
+      throw new Error('초대 코드 생성에 실패했습니다. 다시 시도해주세요.')
+    }
+    if (response.status === 409 && path.includes('/schedules')) {
+      throw new Error('같은 시작 시간의 일정이 이미 있습니다.')
+    }
+    if (response.status === 409) throw new Error('요청한 작업이 현재 상태와 충돌합니다.')
     throw new Error(`여행 API 요청에 실패했습니다. (${response.status})`)
   }
 

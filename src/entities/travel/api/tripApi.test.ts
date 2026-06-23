@@ -238,4 +238,26 @@ describe('tripApi', () => {
     }))
     expect(fetchMock).toHaveBeenNthCalledWith(4, expect.stringContaining('/api/trips/9/schedules/99'), expect.objectContaining({ method: 'DELETE' }))
   })
+
+  it('reports a schedule time conflict instead of an invite code error', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 409 }))
+
+    await expect(createTripSchedule('token', 9, {
+      placeId: null,
+      scheduleDate: '2026-07-01',
+      startTime: '15:00:00',
+      endTime: '16:00:00',
+      title: 'Conflicting schedule',
+      memo: null,
+      dayNo: 1,
+      sortOrder: 1,
+    })).rejects.toThrow('같은 시작 시간의 일정이 이미 있습니다.')
+  })
+
+  it('keeps the invite code conflict message for invite code creation', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 409 }))
+
+    await expect(createInviteCode('token', 9))
+      .rejects.toThrow('초대 코드 생성에 실패했습니다. 다시 시도해주세요.')
+  })
 })

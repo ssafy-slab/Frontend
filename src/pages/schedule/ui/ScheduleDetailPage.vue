@@ -346,10 +346,9 @@ function openFlowPlaceDetail(item: ScheduleItem) {
 }
 
 function findScheduleTimeConflict() {
-  const editingItem = editingSchedule.value
-  if (!editingItem) return null
+  const editingItemId = editingSchedule.value?.id
   return scheduleItems.value.find((item) =>
-    item.id !== editingItem.id
+    item.id !== editingItemId
     && item.date === scheduleDraft.date
     && item.time === scheduleDraft.startTime,
   ) ?? null
@@ -389,11 +388,11 @@ async function saveScheduleItem(forceReplace = false) {
     const editingItem = editingSchedule.value
     const conflict = scheduleReplaceTarget.value ?? findScheduleTimeConflict()
 
-    if (editingItem && conflict && !forceReplace) {
+    if (conflict && !forceReplace) {
       scheduleReplaceTarget.value = conflict
       return
     }
-    if (editingItem && conflict && forceReplace) {
+    if (conflict && forceReplace) {
       scheduleReplaceTarget.value = null
     }
 
@@ -401,15 +400,19 @@ async function saveScheduleItem(forceReplace = false) {
     if (editingItem && conflict && forceReplace) {
       await deleteScheduleItem(props.accessToken, props.trip.id, conflict.scheduleItemId ?? conflict.id)
     }
-    const saved = editingItem?.scheduleItemId
-      ? await updateTripSchedule(props.accessToken, props.trip.id, editingItem.scheduleItemId, payload)
-      : await createTripSchedule(props.accessToken, props.trip.id, payload)
+    const saved = !editingItem && conflict && forceReplace
+      ? await updateTripSchedule(props.accessToken, props.trip.id, conflict.scheduleItemId ?? conflict.id, payload)
+      : editingItem?.scheduleItemId
+        ? await updateTripSchedule(props.accessToken, props.trip.id, editingItem.scheduleItemId, payload)
+        : await createTripSchedule(props.accessToken, props.trip.id, payload)
     const nextItem = toScheduleItem(saved)
     scheduleItems.value = sortScheduleItems(editingItem
       ? scheduleItems.value
         .filter((item) => item.id !== conflict?.id)
         .map((item) => (item.id === nextItem.id ? nextItem : item))
-      : [...scheduleItems.value, nextItem])
+      : conflict && forceReplace
+        ? scheduleItems.value.map((item) => (item.id === conflict.id ? nextItem : item))
+        : [...scheduleItems.value, nextItem])
     showScheduleModal.value = false
     editingSchedule.value = null
     scheduleReplaceTarget.value = null
@@ -1273,7 +1276,7 @@ onBeforeUnmount(closeChatSocket)
               <p class="text-[10px] font-black uppercase tracking-[0.18em] text-brand-500">Schedule change</p>
               <h2 class="mt-1 text-lg font-black text-slate-950">같은 시간의 일정을 변경할까요?</h2>
               <p class="mt-1 text-sm font-semibold leading-6 text-slate-500">
-                {{ scheduleDraft.startTime }}에 이미 등록된 일정이 있습니다. 기존 일정을 현재 수정 중인 일정으로 변경할 수 있습니다.
+                {{ scheduleDraft.startTime }}에 이미 등록된 일정이 있습니다. 기존 일정을 새로 입력한 일정으로 변경할 수 있습니다.
               </p>
             </div>
             <button class="grid size-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-500" aria-label="닫기" @click="scheduleReplaceTarget = null">
@@ -1305,7 +1308,7 @@ onBeforeUnmount(closeChatSocket)
               <span class="absolute -right-2 top-1/2 size-4 -translate-y-1/2 rounded-full border border-brand-200 bg-white" />
               <div class="flex items-center justify-between gap-3">
                 <div class="min-w-0">
-                  <p class="text-[10px] font-black uppercase tracking-[0.16em] text-brand-500">Edited schedule</p>
+                  <p class="text-[10px] font-black uppercase tracking-[0.16em] text-brand-500">New schedule</p>
                   <p class="mt-1 truncate text-base font-black text-slate-950">{{ scheduleDraft.title }}</p>
                 </div>
                 <span class="rounded-full bg-brand-500 px-3 py-1.5 text-xs font-black text-white">{{ scheduleDraft.startTime }}</span>
