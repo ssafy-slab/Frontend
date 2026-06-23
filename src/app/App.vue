@@ -22,11 +22,11 @@ import { useAuthStore } from '@/stores/auth'
 import type { AuthUser } from '@/entities/auth/api/authApi'
 import { fetchPlace } from '@/entities/place/api/placeApi'
 import { fetchTrips } from '@/entities/travel/api/tripApi'
-import { loadViewState, replaceViewHash, saveViewState } from '@/app/lib/viewState'
+import { loadViewState, replaceViewPath, saveViewState } from '@/app/lib/viewState'
 import type { ViewName } from '@/app/lib/viewState'
 import { resolveAuthenticatedView } from '@/app/lib/authRedirect'
 
-const savedViewState = loadViewState(window.sessionStorage, window.location.hash)
+const savedViewState = loadViewState(window.sessionStorage, window.location.pathname, window.location.hash)
 const authStore = useAuthStore()
 const { user: currentUser } = storeToRefs(authStore)
 const initialView = resolveViewChange(savedViewState.activeView ?? 'home', authStore.isAuthenticated).view as ViewName
@@ -49,7 +49,7 @@ watch(
       selectedCommunityPostId: selectedCommunityPostId.value,
       editingCommunityPostId: editingCommunityPostId.value,
     })
-    replaceViewHash(window.history, window.location.pathname, window.location.search, activeView.value)
+    replaceViewPath(window.history, window.location.search, activeView.value)
   },
   { immediate: true },
 )

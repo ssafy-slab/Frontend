@@ -13,6 +13,7 @@ import {
   fetchTrips,
   tripThumbnailImages,
   joinTrip,
+  updateTrip,
   updateTripSchedule,
   updateTripMemberRole,
 } from './tripApi'
@@ -89,16 +90,22 @@ describe('tripApi', () => {
     })
 
     await createTrip('token', { title: 'Busan trip', description: 'Summer vacation', tripType: 'TEAM', startDate: '2026-07-01', endDate: '2026-07-03' })
+    const updatedTrip = await updateTrip('token', 9, { title: 'Updated trip', description: 'Summer vacation', tripType: 'TEAM', startDate: '2026-07-02', endDate: '2026-07-04' })
     await deleteTrip('token', 9)
     await createInviteCode('token', 9)
     await joinTrip('token', 'abcd1234')
     await deleteScheduleItem('token', 9, 7)
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, expect.stringContaining('/api/trips'), expect.objectContaining({ method: 'POST' }))
-    expect(fetchMock).toHaveBeenNthCalledWith(2, expect.stringContaining('/api/trips/9'), expect.objectContaining({ method: 'DELETE' }))
-    expect(fetchMock).toHaveBeenNthCalledWith(3, expect.stringContaining('/api/trips/9/invite-code'), expect.objectContaining({ method: 'POST' }))
-    expect(fetchMock).toHaveBeenNthCalledWith(4, expect.stringContaining('/api/trips/join'), expect.objectContaining({ method: 'POST' }))
-    expect(fetchMock).toHaveBeenNthCalledWith(5, expect.stringContaining('/api/trips/9/schedules/7'), expect.objectContaining({ method: 'DELETE' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, expect.stringContaining('/api/trips/9'), expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ title: 'Updated trip', description: 'Summer vacation', tripType: 'TEAM', startDate: '2026-07-02', endDate: '2026-07-04' }),
+    }))
+    expect(updatedTrip).toMatchObject({ id: 9, title: 'Busan trip' })
+    expect(fetchMock).toHaveBeenNthCalledWith(3, expect.stringContaining('/api/trips/9'), expect.objectContaining({ method: 'DELETE' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(4, expect.stringContaining('/api/trips/9/invite-code'), expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(5, expect.stringContaining('/api/trips/join'), expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(6, expect.stringContaining('/api/trips/9/schedules/7'), expect.objectContaining({ method: 'DELETE' }))
   })
 
   it('loads trip members and updates a member role with documented endpoints', async () => {

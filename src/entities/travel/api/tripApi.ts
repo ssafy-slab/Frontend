@@ -195,6 +195,13 @@ export async function createTrip(token: string, payload: TripPayload) {
   }))
 }
 
+export async function updateTrip(token: string, tripId: number, payload: TripPayload) {
+  return toTrip(await requestWithToken<TripResponse>(`/api/trips/${tripId}`, token, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  }))
+}
+
 export async function deleteTrip(token: string, tripId: number) {
   return requestWithToken<void>(`/api/trips/${tripId}`, token, { method: 'DELETE' })
 }

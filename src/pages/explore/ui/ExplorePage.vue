@@ -135,6 +135,7 @@ async function loadPlaces(nextPage = 0) {
       category: selectedCategory.value || undefined,
       regionId: selectedDistrictId.value ? Number(selectedDistrictId.value) : selectedProvinceId.value ? Number(selectedProvinceId.value) : undefined,
       keyword: keyword.value || undefined,
+      searchMode: 'tokenized',
       sort: selectedSort.value || undefined,
       page: nextPage,
       size: pageSize,
@@ -643,7 +644,11 @@ onBeforeUnmount(() => {
                 <button class="h-9 flex-1 rounded-lg bg-brand-500 text-xs font-black text-white transition hover:bg-brand-600" @click="emit('openPlace', selectedPlace)">
                   상세 보기
                 </button>
-                <button class="h-9 rounded-lg bg-brand-100 px-4 text-[11px] font-black text-brand-600 transition hover:bg-brand-200" @click="openAddModal(selectedPlace)">
+                <button
+                  :data-testid="`open-add-place-${selectedPlace.id}`"
+                  class="h-9 rounded-lg bg-brand-100 px-4 text-[11px] font-black text-brand-600 transition hover:bg-brand-200"
+                  @click="openAddModal(selectedPlace)"
+                >
                   일정
                 </button>
               </div>
@@ -686,7 +691,7 @@ onBeforeUnmount(() => {
           <p v-if="!upcomingTrips.length" class="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs font-bold text-slate-500">
             장소를 추가할 예정 일정이 없습니다.
           </p>
-          <button class="btn-primary mt-5 h-10 w-full rounded-lg text-sm disabled:cursor-not-allowed disabled:opacity-50" :disabled="isAddingToTrip || !upcomingTrips.length" @click="addToTrip()">
+          <button data-testid="confirm-add-place" class="btn-primary mt-5 h-10 w-full rounded-lg text-sm disabled:cursor-not-allowed disabled:opacity-50" :disabled="isAddingToTrip || !upcomingTrips.length" @click="addToTrip()">
             {{ isAddingToTrip ? '추가 중...' : '선택한 일정에 추가' }}
           </button>
         </section>
@@ -695,32 +700,58 @@ onBeforeUnmount(() => {
 
     <Transition name="modal-fade">
       <div v-if="replaceCandidate" class="fixed inset-0 z-[90] grid place-items-center bg-slate-900/55 p-4">
-        <section class="modal-panel w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
+        <section data-testid="replace-place-modal" class="modal-panel w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
           <div class="flex items-start justify-between gap-4">
             <div>
-              <h2 class="text-lg font-black text-slate-950">기존 일정을 교체할까요?</h2>
+              <p class="text-[10px] font-black uppercase tracking-[0.18em] text-brand-500">Schedule change</p>
+              <h2 class="mt-1 text-lg font-black text-slate-950">여행지를 변경하시겠습니까?</h2>
               <p class="mt-1 text-sm font-semibold leading-6 text-slate-500">
-                {{ addDraft.time }}에 이미 등록된 일정이 있습니다.
+                {{ addDraft.time }}에 이미 등록된 일정이 있습니다. 기존 여행지를 새 여행지로 변경할 수 있습니다.
               </p>
             </div>
             <button class="grid size-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-500" aria-label="닫기" @click="replaceCandidate = null">
               <X :size="18" />
             </button>
           </div>
-          <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <p class="text-xs font-black text-slate-500">현재 일정</p>
-            <p class="mt-1 text-sm font-black text-slate-950">{{ replaceCandidate.title }}</p>
+
+          <div class="mt-5 space-y-3">
+            <div data-testid="replace-ticket-current" class="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+              <span class="absolute -left-2 top-1/2 size-4 -translate-y-1/2 rounded-full border border-slate-200 bg-white" />
+              <span class="absolute -right-2 top-1/2 size-4 -translate-y-1/2 rounded-full border border-slate-200 bg-white" />
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Current itinerary</p>
+                  <p class="mt-1 truncate text-base font-black text-slate-950">{{ replaceCandidate.title }}</p>
+                </div>
+                <span class="rounded-full bg-slate-800 px-3 py-1.5 text-xs font-black text-white">{{ addDraft.time }}</span>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3 px-3 text-brand-400" aria-hidden="true">
+              <span class="h-px flex-1 border-t border-dashed border-brand-200" />
+              <span class="grid size-7 place-items-center rounded-full bg-brand-50 text-sm font-black">↓</span>
+              <span class="h-px flex-1 border-t border-dashed border-brand-200" />
+            </div>
+
+            <div data-testid="replace-ticket-new" class="relative overflow-hidden rounded-2xl border border-brand-200 bg-brand-50 px-5 py-4 shadow-sm shadow-indigo-100">
+              <span class="absolute -left-2 top-1/2 size-4 -translate-y-1/2 rounded-full border border-brand-200 bg-white" />
+              <span class="absolute -right-2 top-1/2 size-4 -translate-y-1/2 rounded-full border border-brand-200 bg-white" />
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="text-[10px] font-black uppercase tracking-[0.16em] text-brand-500">New destination</p>
+                  <p class="mt-1 truncate text-base font-black text-slate-950">{{ addTarget?.title }}</p>
+                </div>
+                <span class="rounded-full bg-brand-500 px-3 py-1.5 text-xs font-black text-white">{{ addDraft.time }}</span>
+              </div>
+            </div>
           </div>
-          <div class="mt-2 rounded-xl border border-brand-100 bg-brand-50 p-3">
-            <p class="text-xs font-black text-brand-600">새 장소</p>
-            <p class="mt-1 text-sm font-black text-slate-950">{{ addTarget?.title }}</p>
-          </div>
+
           <div class="mt-5 grid grid-cols-2 gap-2">
-            <button class="h-10 rounded-lg bg-slate-100 text-sm font-black text-slate-700 hover:bg-slate-200" @click="replaceCandidate = null">
-              취소
+            <button data-testid="keep-existing-schedule" class="h-10 rounded-lg bg-slate-100 text-sm font-black text-slate-700 hover:bg-slate-200" @click="replaceCandidate = null">
+              기존 일정 유지
             </button>
-            <button class="h-10 rounded-lg bg-brand-500 text-sm font-black text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50" :disabled="isAddingToTrip" @click="addToTrip(true)">
-              교체하기
+            <button data-testid="confirm-replace-place" class="h-10 rounded-lg bg-brand-500 text-sm font-black text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50" :disabled="isAddingToTrip" @click="addToTrip(true)">
+              여행지 변경
             </button>
           </div>
         </section>

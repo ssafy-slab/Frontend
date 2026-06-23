@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import { loadViewState, replaceViewHash, saveViewState, viewFromHash, viewToHash } from './viewState'
+import { loadViewState, replaceViewPath, saveViewState, viewFromHash, viewFromPath, viewToPath } from './viewState'
 
 describe('viewState', () => {
-  it('maps views to URL hashes', () => {
-    expect(viewToHash('home')).toBe('')
-    expect(viewToHash('schedule')).toBe('#/schedule')
+  it('maps views to clean URL paths while still reading old hashes', () => {
+    expect(viewToPath('home')).toBe('/')
+    expect(viewToPath('schedule')).toBe('/schedule')
+    expect(viewFromPath('/schedule-detail')).toBe('schedule-detail')
+    expect(viewFromPath('/unknown')).toBeNull()
     expect(viewFromHash('#/schedule-detail')).toBe('schedule-detail')
     expect(viewFromHash('#/unknown')).toBeNull()
   })
@@ -37,26 +39,37 @@ describe('viewState', () => {
       },
     )
 
-    const restored = loadViewState({ getItem: (key) => storage.get(key) ?? null }, '')
+    const restored = loadViewState({ getItem: (key) => storage.get(key) ?? null }, '/', '')
 
     expect(restored.activeView).toBe('schedule-detail')
     expect(restored.selectedTrip?.id).toBe(7)
   })
 
-  it('prefers the URL hash over saved active view', () => {
+  it('prefers the URL path over saved active view', () => {
     const restored = loadViewState(
       { getItem: () => JSON.stringify({ activeView: 'schedule' }) },
+      '/community',
+      '',
+    )
+
+    expect(restored.activeView).toBe('community')
+  })
+
+  it('keeps backwards compatibility with old URL hashes', () => {
+    const restored = loadViewState(
+      { getItem: () => JSON.stringify({ activeView: 'schedule' }) },
+      '/',
       '#/community',
     )
 
     expect(restored.activeView).toBe('community')
   })
 
-  it('replaces the current URL hash without adding history entries', () => {
+  it('replaces the current URL path without adding history entries', () => {
     const replaceState = vi.fn()
 
-    replaceViewHash({ replaceState }, '/app', '?tab=1', 'profile')
+    replaceViewPath({ replaceState }, '?tab=1', 'profile')
 
-    expect(replaceState).toHaveBeenCalledWith(null, '', '/app?tab=1#/profile')
+    expect(replaceState).toHaveBeenCalledWith(null, '', '/profile?tab=1')
   })
 })

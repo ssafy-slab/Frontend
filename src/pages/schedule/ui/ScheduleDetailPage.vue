@@ -1229,7 +1229,7 @@ onBeforeUnmount(closeChatSocket)
 
     <Transition name="modal-fade">
       <div v-if="showOrderModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4">
-        <section data-testid="schedule-flow-modal" class="modal-panel w-full max-w-lg overflow-x-hidden rounded-2xl bg-white p-5 shadow-2xl sm:p-6">
+        <section data-testid="schedule-flow-modal" class="modal-panel w-full max-w-xl overflow-x-hidden rounded-2xl bg-white p-5 shadow-2xl sm:p-6">
           <div class="mb-5 flex items-start justify-between gap-4">
             <div>
               <h2 class="flex items-center gap-2 text-lg font-black text-slate-950">
@@ -1244,29 +1244,87 @@ onBeforeUnmount(closeChatSocket)
           </div>
 
           <div class="max-h-[44vh] overflow-x-hidden overflow-y-auto pb-4 pr-1">
-            <section v-for="group in scheduleGroups" :key="group.date" class="pb-7 last:pb-0">
-              <div class="mb-4 flex items-center gap-2.5">
-                <span class="grid size-8 place-items-center rounded-full bg-brand-500 text-white shadow-sm shadow-indigo-200">
+            <section v-for="group in scheduleGroups" :key="group.date" class="pb-8 last:pb-0">
+              <div class="mb-4 flex items-center gap-3">
+                <span class="grid size-9 place-items-center rounded-xl bg-brand-500 text-white shadow-md shadow-indigo-200 ring-4 ring-brand-50">
                   <CalendarCheck :size="16" />
                 </span>
-                <h3 class="text-lg font-black text-brand-500">{{ group.date }}</h3>
+                <div>
+                  <p class="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">ITINERARY</p>
+                  <h3 class="text-lg font-black text-brand-500">{{ group.date }}</h3>
+                </div>
               </div>
 
-              <div class="relative ml-4 border-l-2 border-slate-200 pl-5 sm:ml-4 sm:pl-6">
-                <article v-for="item in group.items" :key="item.id" class="relative mb-4 last:mb-0">
-                  <span class="absolute -left-[27px] top-7 size-4 rounded-full border-[3px] border-white bg-brand-500 shadow-sm sm:-left-[31px]" />
-                  <div class="grid min-w-0 gap-3 sm:grid-cols-[80px_minmax(0,1fr)]">
-                    <p class="pt-6 text-xs font-bold text-slate-400">{{ item.time }}</p>
+              <div class="relative pl-14 sm:pl-20">
+                <div
+                  data-testid="schedule-rail-track"
+                  class="absolute bottom-0 left-3 top-0 w-8 rounded-full sm:left-5"
+                  style="background: repeating-linear-gradient(to bottom, transparent 0 7px, #cbd5e1 7px 10px, transparent 10px 17px);"
+                  aria-hidden="true"
+                >
+                  <span class="absolute bottom-0 left-2 top-0 w-1 rounded-full bg-slate-500 shadow-sm" />
+                  <span class="absolute bottom-0 right-2 top-0 w-1 rounded-full bg-slate-500 shadow-sm" />
+                </div>
+
+                <article v-for="item in group.items" :key="item.id" class="relative mb-5 last:mb-0">
+                  <span
+                    :data-testid="`schedule-rail-sleeper-${item.scheduleItemId}`"
+                    class="absolute -left-11 top-8 h-1 w-12 rounded-full bg-slate-500 sm:-left-[60px] sm:w-16"
+                    aria-hidden="true"
+                  />
+                  <span
+                    :data-testid="`schedule-station-node-${item.scheduleItemId}`"
+                    class="absolute -left-[39px] top-[23px] z-10 grid size-5 place-items-center rounded-full border-[4px] border-white bg-brand-500 shadow-md ring-2 ring-brand-200 sm:-left-[55px]"
+                    aria-hidden="true"
+                  >
+                    <span class="size-1 rounded-full bg-white" />
+                  </span>
+                  <div class="grid min-w-0 gap-2 sm:grid-cols-[72px_minmax(0,1fr)] sm:gap-4">
+                    <p
+                      :data-testid="`schedule-ticket-time-${item.scheduleItemId}`"
+                      class="inline-flex h-7 w-fit items-center rounded-full bg-slate-800 px-2.5 text-[11px] font-black text-white shadow-sm sm:mt-5"
+                    >
+                      {{ item.time }}
+                    </p>
+
                     <div
-                      class="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4 transition"
-                      :class="selectedScheduleItemId === item.id ? 'ring-2 ring-brand-300 bg-brand-50/50' : ''"
+                      class="relative min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm transition"
+                      :class="selectedScheduleItemId === item.id ? 'ring-2 ring-brand-300 bg-brand-50/60 shadow-md shadow-indigo-100' : 'hover:border-brand-200 hover:bg-white'"
                       :data-schedule-flow-item="item.id"
                       :data-testid="`schedule-flow-item-${item.scheduleItemId}`"
                     >
-                      <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <span
+                        :data-testid="`schedule-ticket-notch-left-${item.scheduleItemId}`"
+                        class="absolute -left-2 top-1/2 z-20 size-4 -translate-y-1/2 rounded-full border border-slate-200 bg-white"
+                        aria-hidden="true"
+                      />
+                      <span
+                        :data-testid="`schedule-ticket-notch-right-${item.scheduleItemId}`"
+                        class="absolute -right-2 top-1/2 z-20 size-4 -translate-y-1/2 rounded-full border border-slate-200 bg-white"
+                        aria-hidden="true"
+                      />
+                      <span
+                        :data-testid="`schedule-ticket-serration-left-${item.scheduleItemId}`"
+                        class="absolute inset-y-3 -left-1 z-10 w-3"
+                        style="background: radial-gradient(circle at left center, white 0 3px, transparent 3.5px) 0 0 / 8px 13px repeat-y;"
+                        aria-hidden="true"
+                      />
+                      <span
+                        :data-testid="`schedule-ticket-serration-right-${item.scheduleItemId}`"
+                        class="absolute inset-y-3 -right-1 z-10 w-3"
+                        style="background: radial-gradient(circle at right center, white 0 3px, transparent 3.5px) 0 0 / 8px 13px repeat-y;"
+                        aria-hidden="true"
+                      />
+                      <span
+                        :data-testid="`schedule-ticket-perforation-${item.scheduleItemId}`"
+                        class="absolute bottom-0 right-12 top-0 hidden border-l-2 border-dashed border-slate-200 sm:block"
+                        aria-hidden="true"
+                      />
+
+                      <div class="flex flex-col gap-3 pr-0 sm:flex-row sm:items-start sm:justify-between sm:pr-12">
                         <div class="min-w-0">
                           <p class="flex items-center gap-1.5 text-xs font-black text-brand-500">
-                            <span class="size-1.5 rounded-full bg-violet-500" />
+                            <span class="size-2 rounded-sm bg-violet-500 rotate-45" />
                             {{ item.category }}
                           </p>
                           <h4 class="mt-2 break-words text-base font-black text-slate-950">{{ item.title }}</h4>
@@ -1283,7 +1341,7 @@ onBeforeUnmount(closeChatSocket)
                           </button>
                         </div>
                         <button
-                          class="grid size-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-slate-100 hover:text-slate-600"
+                          class="grid size-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-red-50 hover:text-red-500"
                           :aria-label="`${item.title} 삭제`"
                           @click="requestRemoveScheduleItem(item)"
                         >
@@ -1332,9 +1390,6 @@ onBeforeUnmount(closeChatSocket)
           </div>
           <p class="text-sm font-semibold leading-6 text-slate-600">
             <span class="font-black text-slate-950">{{ deleteScheduleTarget.title }}</span> 항목을 전체 일정에서 삭제합니다.
-          </p>
-          <p class="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs font-bold text-slate-500">
-            확인을 누르면 이 항목이 현재 일정에서 제거됩니다.
           </p>
           <div class="mt-5 flex justify-end gap-2">
             <button class="h-10 rounded-lg bg-slate-100 px-4 text-sm font-black text-slate-700" @click="deleteScheduleTarget = null">

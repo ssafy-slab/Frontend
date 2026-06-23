@@ -47,12 +47,21 @@ export function viewToHash(view: ViewName) {
   return view === 'home' ? '' : `#/${view}`
 }
 
+export function viewToPath(view: ViewName) {
+  return view === 'home' ? '/' : `/${view}`
+}
+
 export function viewFromHash(hash: string): ViewName | null {
   const value = hash.replace(/^#\/?/, '')
   return isViewName(value) ? value : null
 }
 
-export function loadViewState(storage: Pick<Storage, 'getItem'>, hash = ''): Partial<SavedViewState> {
+export function viewFromPath(pathname: string): ViewName | null {
+  const value = pathname.replace(/^\/+|\/+$/g, '')
+  return value && isViewName(value) ? value : null
+}
+
+export function loadViewState(storage: Pick<Storage, 'getItem'>, pathname = '/', hash = ''): Partial<SavedViewState> {
   let saved: Partial<SavedViewState> = {}
   try {
     const raw = storage.getItem(storageKey)
@@ -61,8 +70,9 @@ export function loadViewState(storage: Pick<Storage, 'getItem'>, hash = ''): Par
     saved = {}
   }
 
+  const pathView = viewFromPath(pathname)
   const hashView = viewFromHash(hash)
-  const activeView = hashView ?? (isViewName(saved.activeView) ? saved.activeView : undefined)
+  const activeView = pathView ?? hashView ?? (isViewName(saved.activeView) ? saved.activeView : undefined)
   return { ...saved, activeView }
 }
 
@@ -72,4 +82,8 @@ export function saveViewState(storage: Pick<Storage, 'setItem'>, state: SavedVie
 
 export function replaceViewHash(history: Pick<History, 'replaceState'>, pathname: string, search: string, view: ViewName) {
   history.replaceState(null, '', `${pathname}${search}${viewToHash(view)}`)
+}
+
+export function replaceViewPath(history: Pick<History, 'replaceState'>, search: string, view: ViewName) {
+  history.replaceState(null, '', `${viewToPath(view)}${search}`)
 }

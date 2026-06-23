@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { Link, MoreHorizontal, Plane, Plus, Trash2, X } from 'lucide-vue-next'
+import { Link, MoreHorizontal, Pencil, Plane, Plus, Trash2, X } from 'lucide-vue-next'
 import type { Trip } from '@/entities/travel/model/travel'
-import { createTrip as createTripApi, deleteTrip as deleteTripApi, fetchTrips, getTripThumbnailImage, joinTrip as joinTripApi } from '@/entities/travel/api/tripApi'
+import { createTrip as createTripApi, deleteTrip as deleteTripApi, fetchTrips, getTripThumbnailImage, joinTrip as joinTripApi, updateTrip as updateTripApi } from '@/entities/travel/api/tripApi'
 import { getTripTypeLabel } from '@/entities/travel/model/tripAccess'
 
 type User = {
@@ -26,12 +26,12 @@ const showModal = ref(false)
 const showJoinModal = ref(false)
 const manageMode = ref(false)
 const deleteTarget = ref<Trip | null>(null)
+const editTarget = ref<Trip | null>(null)
 const isLoading = ref(false)
 const isSaving = ref(false)
 const loadError = ref('')
 const draft = reactive({
   title: '',
-  destination: '',
   start: '',
   end: '',
   tripType: 'TEAM',
@@ -39,10 +39,19 @@ const draft = reactive({
 const joinDraft = reactive({
   inviteCode: '',
 })
+const editDraft = reactive({
+  title: '',
+  start: '',
+  end: '',
+})
 
 const upcomingTrips = computed(() => localTrips.value.filter((trip) => trip.phase === 'upcoming'))
 const pastTrips = computed(() => localTrips.value.filter((trip) => trip.phase === 'past'))
 const visibleTrips = computed(() => (activePhase.value === 'upcoming' ? upcomingTrips.value : pastTrips.value))
+const editDateError = computed(() => {
+  if (!editDraft.start || !editDraft.end) return ''
+  return editDraft.end < editDraft.start ? '종료일은 시작일보다 빠를 수 없습니다.' : ''
+})
 
 async function loadTrips() {
   if (!props.accessToken) return
@@ -61,20 +70,19 @@ async function loadTrips() {
 
 function resetDraft() {
   draft.title = ''
-  draft.destination = ''
   draft.start = ''
   draft.end = ''
   draft.tripType = 'TEAM'
 }
 
 async function createTrip() {
-  if (!draft.title.trim() || !draft.destination.trim()) return
+  if (!draft.title.trim()) return
 
   isSaving.value = true
   try {
     const payload = {
       title: draft.title.trim(),
-      description: `${draft.destination.trim()} 여행 후보를 만들었습니다. 장소를 추가하고 팀원과 조율해보세요.`,
+      description: '새로운 여행 일정을 만들었습니다. 장소를 추가하고 팀원과 조율해보세요.',
       tripType: draft.tripType,
       startDate: draft.start || null,
       endDate: draft.end || null,
@@ -114,6 +122,45 @@ function requestDeleteTrip(trip: Trip) {
     return
   }
   deleteTarget.value = trip
+}
+
+function openEditTrip(trip: Trip) {
+  editTarget.value = trip
+  editDraft.title = trip.title
+  editDraft.start = trip.startDate ?? ''
+  editDraft.end = trip.endDate ?? ''
+}
+
+function closeEditTrip() {
+  editTarget.value = null
+  editDraft.title = ''
+  editDraft.start = ''
+  editDraft.end = ''
+}
+
+async function saveTripEdit() {
+  if (!editTarget.value || !props.accessToken || !editDraft.title.trim() || editDateError.value) return
+
+  const target = editTarget.value
+  isSaving.value = true
+  try {
+    const updated = await updateTripApi(props.accessToken, target.id, {
+      title: editDraft.title.trim(),
+      description: target.description || null,
+      tripType: target.tripType || null,
+      startDate: editDraft.start || null,
+      endDate: editDraft.end || null,
+    })
+    localTrips.value = localTrips.value.map((trip) =>
+      trip.id === target.id ? { ...updated, image: target.image, members: target.members } : trip,
+    )
+    closeEditTrip()
+    emit('saved', `${updated.title} 일정을 수정했습니다.`)
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : '일정을 수정하지 못했습니다.')
+  } finally {
+    isSaving.value = false
+  }
 }
 
 async function confirmDeleteTrip() {
@@ -183,7 +230,7 @@ watch(() => props.accessToken, loadTrips)
           <Link :size="15" />
           초대 코드 참여
         </button>
-        <button class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-3.5 py-2 text-xs font-black text-slate-700 hover:bg-slate-200" @click="manageMode = !manageMode">
+        <button data-testid="toggle-trip-management" class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-3.5 py-2 text-xs font-black text-slate-700 hover:bg-slate-200" @click="manageMode = !manageMode">
           <MoreHorizontal :size="15" />
           {{ manageMode ? '관리 종료' : '일정 관리' }}
         </button>
@@ -232,16 +279,28 @@ watch(() => props.accessToken, loadTrips)
                 {{ member }}
               </span>
             </div>
+            <div v-if="manageMode" class="inline-flex items-center overflow-hidden rounded-full border border-slate-200 bg-white/95 text-xs font-black text-slate-500 shadow-sm shadow-slate-200/70">
+              <button
+                class="inline-flex h-9 items-center gap-1.5 px-3.5 transition hover:bg-brand-50 hover:text-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+                :data-testid="`edit-trip-${trip.id}`"
+                :disabled="isSaving || !accessToken"
+                @click.stop="openEditTrip(trip)"
+              >
+                <Pencil :size="13" />
+                수정
+              </button>
+              <span class="h-4 w-px bg-slate-200" aria-hidden="true"></span>
             <button
               v-if="manageMode"
-              class="inline-flex items-center gap-1 rounded-lg bg-red-50 px-3 py-2 text-xs font-black text-red-500 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+              class="inline-flex h-9 items-center gap-1.5 px-3.5 transition hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
               :disabled="isSaving || (!accessToken && trip.members.length > 1)"
               :title="!accessToken && trip.members.length > 1 ? '초대된 유저가 없어야 삭제할 수 있습니다.' : '일정 삭제'"
               @click.stop="requestDeleteTrip(trip)"
             >
-              <Trash2 :size="14" />
+              <Trash2 :size="13" />
               삭제
             </button>
+            </div>
             <span v-else class="text-[11px] font-black text-brand-500 sm:text-xs">상세 보기 →</span>
           </div>
         </div>
@@ -269,10 +328,6 @@ watch(() => props.accessToken, loadTrips)
             <label class="block">
               <span class="mb-1.5 block text-xs font-black text-slate-950">여행 제목</span>
               <input v-model="draft.title" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="예: 부산 힐링 여행" />
-            </label>
-            <label class="block">
-              <span class="mb-1.5 block text-xs font-black text-slate-950">목적지</span>
-              <input v-model="draft.destination" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="어디로 떠나시나요?" />
             </label>
             <label class="block">
               <span class="mb-1.5 block text-xs font-black text-slate-950">여행 유형</span>
@@ -319,6 +374,68 @@ watch(() => props.accessToken, loadTrips)
     </Transition>
 
     <Transition name="modal-fade">
+      <div v-if="editTarget" class="fixed inset-0 z-[90] grid place-items-center bg-slate-900/55 p-4">
+        <section class="modal-panel w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl sm:max-w-md">
+          <div class="mb-4 flex items-center justify-between">
+            <h2 class="flex items-center gap-2 text-xl font-black text-slate-950">
+              <Pencil :size="22" class="text-brand-500" />
+              일정 수정
+            </h2>
+            <button class="text-slate-500" aria-label="닫기" @click="closeEditTrip">
+              <X :size="22" />
+            </button>
+          </div>
+
+          <div class="space-y-3.5">
+            <label class="block">
+              <span class="mb-1.5 block text-xs font-black text-slate-950">일정 제목</span>
+              <input
+                v-model="editDraft.title"
+                data-testid="edit-trip-title"
+                class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none"
+                placeholder="여행 제목"
+              />
+            </label>
+            <div>
+              <span class="mb-1.5 block text-xs font-black text-slate-950">여행 기간</span>
+              <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <input
+                  v-model="editDraft.start"
+                  data-testid="edit-trip-start"
+                  type="date"
+                  class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none"
+                />
+                <input
+                  v-model="editDraft.end"
+                  data-testid="edit-trip-end"
+                  type="date"
+                  class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none"
+                />
+              </div>
+              <p v-if="editDateError" data-testid="trip-edit-date-error" class="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-black text-red-500">
+                {{ editDateError }}
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-5 flex justify-end gap-2">
+            <button class="h-10 rounded-lg bg-slate-100 px-4 text-sm font-black text-slate-700" @click="closeEditTrip">
+              취소
+            </button>
+            <button
+              data-testid="save-trip-edit"
+              class="h-10 rounded-lg bg-brand-500 px-4 text-sm font-black text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="isSaving || !editDraft.title.trim() || Boolean(editDateError)"
+              @click="saveTripEdit"
+            >
+              {{ isSaving ? '저장 중...' : '변경 저장' }}
+            </button>
+          </div>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="modal-fade">
       <div v-if="deleteTarget" class="fixed inset-0 z-[90] grid place-items-center bg-slate-900/55 p-4">
         <section class="modal-panel w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
           <div class="mb-4 flex items-center justify-between">
@@ -329,9 +446,6 @@ watch(() => props.accessToken, loadTrips)
           </div>
           <p class="text-sm font-semibold leading-6 text-slate-600">
             {{ deleteTarget.title }} 일정은 삭제 후 되돌릴 수 없습니다.
-          </p>
-          <p class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-black text-red-500">
-            로그인 상태에서는 서버 권한 기준에 따라 삭제됩니다.
           </p>
           <div class="mt-5 flex justify-end gap-2">
             <button class="h-10 rounded-lg bg-slate-100 px-4 text-sm font-black text-slate-700" @click="deleteTarget = null">

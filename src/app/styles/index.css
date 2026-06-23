@@ -147,6 +147,37 @@ button {
   will-change: opacity, transform;
 }
 
+.modal-panel h2 {
+  font-size: 1.125rem;
+  line-height: 1.55;
+  font-weight: 750;
+  color: #0f172a;
+}
+
+.modal-panel h3,
+.modal-panel h4 {
+  font-weight: 700;
+}
+
+.modal-panel p {
+  font-weight: 500;
+}
+
+.modal-panel label span,
+.modal-panel .font-black {
+  font-weight: 700;
+}
+
+.modal-panel button {
+  font-weight: 700;
+}
+
+.modal-panel .btn-primary,
+.modal-panel .bg-red-500,
+.modal-panel .bg-brand-500 {
+  font-weight: 700;
+}
+
 .modal-fade-enter-from .modal-panel,
 .modal-fade-leave-to .modal-panel {
   opacity: 0;
