@@ -7,12 +7,27 @@ const { fetchChatMessages, getChatSocketUrl } = vi.hoisted(() => ({
   fetchChatMessages: vi.fn(),
   getChatSocketUrl: vi.fn(),
 }))
-const { createChecklistItem, deleteChecklistItem, fetchChecklistItems, fetchTripMembers, updateTripMemberRole } = vi.hoisted(() => ({
+const { fetchPlaces } = vi.hoisted(() => ({
+  fetchPlaces: vi.fn(),
+}))
+const {
+  createChecklistItem,
+  createTripSchedule,
+  deleteChecklistItem,
+  fetchChecklistItems,
+  fetchTripMembers,
+  fetchTripSchedules,
+  updateTripMemberRole,
+  updateTripSchedule,
+} = vi.hoisted(() => ({
   createChecklistItem: vi.fn(),
+  createTripSchedule: vi.fn(),
   deleteChecklistItem: vi.fn(),
   fetchChecklistItems: vi.fn(),
   fetchTripMembers: vi.fn(),
+  fetchTripSchedules: vi.fn(),
   updateTripMemberRole: vi.fn(),
+  updateTripSchedule: vi.fn(),
 }))
 
 vi.mock('@/entities/chat/api/chatApi', async (importOriginal) => {
@@ -20,9 +35,24 @@ vi.mock('@/entities/chat/api/chatApi', async (importOriginal) => {
   return { ...actual, fetchChatMessages, getChatSocketUrl }
 })
 
+vi.mock('@/entities/place/api/placeApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/entities/place/api/placeApi')>()
+  return { ...actual, fetchPlaces }
+})
+
 vi.mock('@/entities/travel/api/tripApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/entities/travel/api/tripApi')>()
-  return { ...actual, createChecklistItem, deleteChecklistItem, fetchChecklistItems, fetchTripMembers, updateTripMemberRole }
+  return {
+    ...actual,
+    createChecklistItem,
+    createTripSchedule,
+    deleteChecklistItem,
+    fetchChecklistItems,
+    fetchTripMembers,
+    fetchTripSchedules,
+    updateTripMemberRole,
+    updateTripSchedule,
+  }
 })
 
 class MockWebSocket {
@@ -90,11 +120,79 @@ describe('ScheduleDetailPage collaboration controls', () => {
       },
     ])
     getChatSocketUrl.mockReturnValue('ws://localhost:8080/ws/chats?token=token')
+    fetchPlaces.mockResolvedValue({
+      content: [
+        {
+          id: 100,
+          title: 'Haeundae Beach',
+          location: 'Busan',
+          category: 'Beach',
+          description: '',
+          image: '',
+          rating: 0,
+          reviewCount: '0',
+          tags: [],
+          marker: { top: '50%', left: '50%' },
+          coordinates: { lat: 35.1587, lng: 129.1604 },
+        },
+      ],
+      totalElements: 1,
+      page: 0,
+      size: 20,
+      hasNext: false,
+    })
     fetchTripMembers.mockResolvedValue([
       { userId: 10, nickname: 'owner', memberRole: 'OWNER', inviteStatus: 'ACCEPTED', joinedAt: '2026-06-22T10:00:00' },
       { userId: 20, nickname: 'member', memberRole: 'EDITOR', inviteStatus: 'ACCEPTED', joinedAt: '2026-06-22T11:00:00' },
     ])
     updateTripMemberRole.mockResolvedValue({ userId: 20, nickname: 'member', memberRole: 'VIEWER', inviteStatus: 'ACCEPTED', joinedAt: '2026-06-22T11:00:00' })
+    fetchTripSchedules.mockResolvedValue([
+      {
+        scheduleItemId: 99,
+        tripId: 1,
+        placeId: null,
+        createdByUserId: 10,
+        dayNo: 1,
+        scheduleDate: '2026-07-01',
+        startTime: '15:00:00',
+        endTime: '16:00:00',
+        title: '자유시간',
+        memo: '숙소 근처',
+        sortOrder: 2,
+        createdAt: '2026-06-23T10:00:00',
+        updatedAt: '2026-06-23T10:00:00',
+      },
+    ])
+    createTripSchedule.mockResolvedValue({
+      scheduleItemId: 100,
+      tripId: 1,
+      placeId: null,
+      createdByUserId: 10,
+      dayNo: 1,
+      scheduleDate: '2026-07-01',
+      startTime: '18:00:00',
+      endTime: '19:00:00',
+      title: '저녁',
+      memo: '해산물',
+      sortOrder: 3,
+      createdAt: '2026-06-23T11:00:00',
+      updatedAt: '2026-06-23T11:00:00',
+    })
+    updateTripSchedule.mockResolvedValue({
+      scheduleItemId: 99,
+      tripId: 1,
+      placeId: null,
+      createdByUserId: 10,
+      dayNo: 1,
+      scheduleDate: '2026-07-01',
+      startTime: '17:00:00',
+      endTime: '18:00:00',
+      title: '수정된 자유시간',
+      memo: '카페 근처',
+      sortOrder: 2,
+      createdAt: '2026-06-23T10:00:00',
+      updatedAt: '2026-06-23T11:10:00',
+    })
     fetchChecklistItems.mockResolvedValue([
       {
         checklistItemId: 99,
@@ -393,6 +491,128 @@ describe('ScheduleDetailPage collaboration controls', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('live from teammate')
+  })
+
+  it('loads schedule items for the trip', async () => {
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(fetchTripSchedules).toHaveBeenCalledWith('token', 1)
+    expect(wrapper.text()).toContain('15:00 자유시간')
+    expect(wrapper.text()).toContain('숙소 근처')
+  })
+
+  it('creates a free schedule item through the schedule API', async () => {
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-schedule-form"]').trigger('click')
+    await wrapper.get('[data-testid="schedule-title-input"]').setValue('저녁')
+    await wrapper.get('[data-testid="schedule-date-input"]').setValue('2026-07-01')
+    await wrapper.get('[data-testid="schedule-start-input"]').setValue('18:00')
+    await wrapper.get('[data-testid="schedule-end-input"]').setValue('19:00')
+    await wrapper.get('[data-testid="schedule-memo-input"]').setValue('해산물')
+    await wrapper.get('[data-testid="save-schedule-button"]').trigger('click')
+    await flushPromises()
+
+    expect(createTripSchedule).toHaveBeenCalledWith('token', 1, {
+      placeId: null,
+      scheduleDate: '2026-07-01',
+      startTime: '18:00:00',
+      endTime: '19:00:00',
+      title: '저녁',
+      memo: '해산물',
+      dayNo: 1,
+      sortOrder: 2,
+    })
+    expect(wrapper.text()).toContain('18:00 저녁')
+  })
+
+  it('creates a place schedule item when a place is selected in the place tab', async () => {
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-schedule-form"]').trigger('click')
+    await wrapper.get('[data-testid="schedule-place-tab"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="schedule-place-select"]').setValue('100')
+    await wrapper.get('[data-testid="schedule-title-input"]').setValue('Haeundae walk')
+    await wrapper.get('[data-testid="schedule-date-input"]').setValue('2026-07-01')
+    await wrapper.get('[data-testid="schedule-start-input"]').setValue('10:00')
+    await wrapper.get('[data-testid="schedule-end-input"]').setValue('11:30')
+    await wrapper.get('[data-testid="save-schedule-button"]').trigger('click')
+    await flushPromises()
+
+    expect(fetchPlaces).toHaveBeenCalledWith(expect.objectContaining({ page: 0, size: 20 }))
+    expect(createTripSchedule).toHaveBeenCalledWith('token', 1, expect.objectContaining({
+      placeId: 100,
+      scheduleDate: '2026-07-01',
+      startTime: '10:00:00',
+      endTime: '11:30:00',
+      title: 'Haeundae walk',
+    }))
+  })
+
+  it('updates a schedule item through the schedule API', async () => {
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="edit-schedule-99"]').trigger('click')
+    await wrapper.get('[data-testid="schedule-title-input"]').setValue('수정된 자유시간')
+    await wrapper.get('[data-testid="schedule-start-input"]').setValue('17:00')
+    await wrapper.get('[data-testid="schedule-end-input"]').setValue('18:00')
+    await wrapper.get('[data-testid="schedule-memo-input"]').setValue('카페 근처')
+    await wrapper.get('[data-testid="save-schedule-button"]').trigger('click')
+    await flushPromises()
+
+    expect(updateTripSchedule).toHaveBeenCalledWith('token', 1, 99, expect.objectContaining({
+      scheduleDate: '2026-07-01',
+      startTime: '17:00:00',
+      endTime: '18:00:00',
+      title: '수정된 자유시간',
+      memo: '카페 근처',
+    }))
+    expect(wrapper.text()).toContain('17:00 수정된 자유시간')
   })
 
   it('loads checklist items for the trip', async () => {

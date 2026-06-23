@@ -2,14 +2,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createChecklistItem,
   createInviteCode,
+  createTripSchedule,
   createTrip,
   deleteChecklistItem,
   deleteScheduleItem,
   deleteTrip,
   fetchChecklistItems,
+  fetchTripSchedules,
   fetchTripMembers,
   fetchTrips,
   joinTrip,
+  updateTripSchedule,
   updateTripMemberRole,
 } from './tripApi'
 
@@ -170,5 +173,59 @@ describe('tripApi', () => {
       expect.stringContaining('/api/trips/9/checklist-items/99'),
       expect.objectContaining({ method: 'DELETE', headers: expect.objectContaining({ Authorization: 'Bearer token' }) }),
     )
+  })
+
+  it('uses the documented trip schedule endpoints with authentication', async () => {
+    const schedule = {
+      scheduleItemId: 99,
+      tripId: 9,
+      placeId: null,
+      createdByUserId: 10,
+      dayNo: 1,
+      scheduleDate: '2026-07-01',
+      startTime: '15:00:00',
+      endTime: '16:00:00',
+      title: '자유시간',
+      memo: '숙소 근처',
+      sortOrder: 2,
+      createdAt: '2026-06-23T10:00:00',
+      updatedAt: '2026-06-23T10:00:00',
+    }
+    const payload = {
+      placeId: null,
+      scheduleDate: '2026-07-01',
+      startTime: '15:00:00',
+      endTime: '16:00:00',
+      title: '자유시간',
+      memo: '숙소 근처',
+      dayNo: 1,
+      sortOrder: 2,
+    }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      if (init?.method === 'DELETE') return new Response(null, { status: 204 })
+      if (init?.method === 'POST') return new Response(JSON.stringify(schedule), { status: 201 })
+      if (init?.method === 'PUT') return new Response(JSON.stringify({ ...schedule, title: '점심' }), { status: 200 })
+      return new Response(JSON.stringify([schedule]), { status: 200 })
+    })
+
+    const schedules = await fetchTripSchedules('token', 9)
+    const created = await createTripSchedule('token', 9, payload)
+    const updated = await updateTripSchedule('token', 9, 99, { ...payload, title: '점심' })
+    await deleteScheduleItem('token', 9, 99)
+
+    expect(schedules).toEqual([schedule])
+    expect(created).toEqual(schedule)
+    expect(updated.title).toBe('점심')
+    expect(fetchMock).toHaveBeenNthCalledWith(1, expect.stringContaining('/api/trips/9/schedules'), expect.objectContaining({ method: 'GET' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, expect.stringContaining('/api/trips/9/schedules'), expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: expect.objectContaining({ Authorization: 'Bearer token', 'Content-Type': 'application/json' }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, expect.stringContaining('/api/trips/9/schedules/99'), expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ ...payload, title: '점심' }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(4, expect.stringContaining('/api/trips/9/schedules/99'), expect.objectContaining({ method: 'DELETE' }))
   })
 })

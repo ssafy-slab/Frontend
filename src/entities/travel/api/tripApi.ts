@@ -59,6 +59,33 @@ export type ChecklistItemPayload = {
   dueAt?: string
 }
 
+export type TripScheduleResponse = {
+  scheduleItemId: number
+  tripId: number
+  placeId: number | null
+  createdByUserId: number
+  dayNo: number
+  scheduleDate: string
+  startTime: string
+  endTime: string | null
+  title: string
+  memo: string | null
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type TripSchedulePayload = {
+  placeId?: number | null
+  scheduleDate: string
+  startTime: string
+  endTime?: string | null
+  title: string
+  memo?: string | null
+  dayNo: number
+  sortOrder: number
+}
+
 const fallbackTripImage = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80'
 
 function authHeaders(token: string, json = false) {
@@ -185,6 +212,24 @@ export async function updateTripMemberRole(token: string, tripId: number, member
 
 export async function deleteScheduleItem(token: string, tripId: number, scheduleItemId: number) {
   return requestWithToken<void>(`/api/trips/${tripId}/schedules/${scheduleItemId}`, token, { method: 'DELETE' })
+}
+
+export async function fetchTripSchedules(token: string, tripId: number) {
+  return requestWithToken<TripScheduleResponse[]>(`/api/trips/${tripId}/schedules`, token, { method: 'GET' })
+}
+
+export async function createTripSchedule(token: string, tripId: number, payload: TripSchedulePayload) {
+  return requestWithToken<TripScheduleResponse>(`/api/trips/${tripId}/schedules`, token, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function updateTripSchedule(token: string, tripId: number, scheduleItemId: number, payload: TripSchedulePayload) {
+  return requestWithToken<TripScheduleResponse>(`/api/trips/${tripId}/schedules/${scheduleItemId}`, token, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
 }
 
 export async function fetchChecklistItems(token: string, tripId: number) {

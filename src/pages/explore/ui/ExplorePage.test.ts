@@ -2,6 +2,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ExplorePage from './ExplorePage.vue'
 
+function waitForFilterReload() {
+  return new Promise((resolve) => window.setTimeout(resolve, 0))
+}
+
 const { fetchPlaces, fetchPlaceFilters } = vi.hoisted(() => ({
   fetchPlaces: vi.fn(),
   fetchPlaceFilters: vi.fn(),
@@ -36,10 +40,12 @@ describe('ExplorePage review sorting', () => {
 
     const recommended = wrapper.get('button[aria-pressed="false"]')
     await recommended.trigger('click')
+    await waitForFilterReload()
     await flushPromises()
     expect(fetchPlaces).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'recommended' }))
 
     await recommended.trigger('click')
+    await waitForFilterReload()
     await flushPromises()
     expect(fetchPlaces).toHaveBeenLastCalledWith(expect.objectContaining({ sort: undefined }))
   })
