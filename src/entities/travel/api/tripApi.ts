@@ -42,6 +42,23 @@ export type InviteCodeResponse = {
   inviteCode: string
 }
 
+export type ChecklistItemResponse = {
+  checklistItemId: number
+  tripId: number
+  assigneeUserId: number | null
+  title: string
+  done: boolean
+  dueAt: string | null
+  createdAt: string
+  completedAt: string | null
+}
+
+export type ChecklistItemPayload = {
+  title: string
+  assigneeUserId?: number
+  dueAt?: string
+}
+
 const fallbackTripImage = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80'
 
 function authHeaders(token: string, json = false) {
@@ -168,4 +185,19 @@ export async function updateTripMemberRole(token: string, tripId: number, member
 
 export async function deleteScheduleItem(token: string, tripId: number, scheduleItemId: number) {
   return requestWithToken<void>(`/api/trips/${tripId}/schedules/${scheduleItemId}`, token, { method: 'DELETE' })
+}
+
+export async function fetchChecklistItems(token: string, tripId: number) {
+  return requestWithToken<ChecklistItemResponse[]>(`/api/trips/${tripId}/checklist-items`, token, { method: 'GET' })
+}
+
+export async function createChecklistItem(token: string, tripId: number, payload: ChecklistItemPayload) {
+  return requestWithToken<ChecklistItemResponse>(`/api/trips/${tripId}/checklist-items`, token, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function deleteChecklistItem(token: string, tripId: number, checklistItemId: number) {
+  return requestWithToken<void>(`/api/trips/${tripId}/checklist-items/${checklistItemId}`, token, { method: 'DELETE' })
 }

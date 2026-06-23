@@ -7,7 +7,10 @@ const { fetchChatMessages, getChatSocketUrl } = vi.hoisted(() => ({
   fetchChatMessages: vi.fn(),
   getChatSocketUrl: vi.fn(),
 }))
-const { fetchTripMembers, updateTripMemberRole } = vi.hoisted(() => ({
+const { createChecklistItem, deleteChecklistItem, fetchChecklistItems, fetchTripMembers, updateTripMemberRole } = vi.hoisted(() => ({
+  createChecklistItem: vi.fn(),
+  deleteChecklistItem: vi.fn(),
+  fetchChecklistItems: vi.fn(),
   fetchTripMembers: vi.fn(),
   updateTripMemberRole: vi.fn(),
 }))
@@ -19,7 +22,7 @@ vi.mock('@/entities/chat/api/chatApi', async (importOriginal) => {
 
 vi.mock('@/entities/travel/api/tripApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/entities/travel/api/tripApi')>()
-  return { ...actual, fetchTripMembers, updateTripMemberRole }
+  return { ...actual, createChecklistItem, deleteChecklistItem, fetchChecklistItems, fetchTripMembers, updateTripMemberRole }
 })
 
 class MockWebSocket {
@@ -92,6 +95,29 @@ describe('ScheduleDetailPage collaboration controls', () => {
       { userId: 20, nickname: 'member', memberRole: 'EDITOR', inviteStatus: 'ACCEPTED', joinedAt: '2026-06-22T11:00:00' },
     ])
     updateTripMemberRole.mockResolvedValue({ userId: 20, nickname: 'member', memberRole: 'VIEWER', inviteStatus: 'ACCEPTED', joinedAt: '2026-06-22T11:00:00' })
+    fetchChecklistItems.mockResolvedValue([
+      {
+        checklistItemId: 99,
+        tripId: 1,
+        assigneeUserId: 20,
+        title: '여권 챙기기',
+        done: false,
+        dueAt: '2026-07-01T09:00:00',
+        createdAt: '2026-06-23T10:00:00',
+        completedAt: null,
+      },
+    ])
+    createChecklistItem.mockResolvedValue({
+      checklistItemId: 100,
+      tripId: 1,
+      assigneeUserId: null,
+      title: '충전기 챙기기',
+      done: false,
+      dueAt: null,
+      createdAt: '2026-06-23T10:05:00',
+      completedAt: null,
+    })
+    deleteChecklistItem.mockResolvedValue(undefined)
   })
 
   it('hides participant management for personal trips', () => {
@@ -367,5 +393,78 @@ describe('ScheduleDetailPage collaboration controls', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('live from teammate')
+  })
+
+  it('loads checklist items for the trip', async () => {
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(fetchChecklistItems).toHaveBeenCalledWith('token', 1)
+    expect(wrapper.text()).toContain('여권 챙기기')
+    expect(wrapper.text()).toContain('0/1')
+  })
+
+  it('creates and deletes checklist items through the checklist API', async () => {
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="checklist-title-input"]').setValue('충전기 챙기기')
+    await wrapper.get('[data-testid="checklist-title-input"]').trigger('keyup.enter')
+    await flushPromises()
+
+    expect(createChecklistItem).toHaveBeenCalledWith('token', 1, { title: '충전기 챙기기' })
+    expect(wrapper.text()).toContain('충전기 챙기기')
+
+    await wrapper.get('[data-testid="delete-checklist-99"]').trigger('click')
+    await flushPromises()
+
+    expect(deleteChecklistItem).toHaveBeenCalledWith('token', 1, 99)
+    expect(wrapper.text()).not.toContain('여권 챙기기')
+  })
+
+  it('toggles checklist completion locally when the checkbox is clicked', async () => {
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    const checkbox = wrapper.get('[data-testid="checklist-done-99"]')
+    await checkbox.setValue(true)
+
+    expect(wrapper.text()).toContain('1/1')
+    expect(wrapper.get('[data-testid="checklist-row-99"]').classes()).toContain('line-through')
+
+    await checkbox.setValue(false)
+
+    expect(wrapper.text()).toContain('0/1')
+    expect(wrapper.get('[data-testid="checklist-row-99"]').classes()).not.toContain('line-through')
   })
 })

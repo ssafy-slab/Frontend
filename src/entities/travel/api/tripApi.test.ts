@@ -1,5 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createInviteCode, createTrip, deleteScheduleItem, deleteTrip, fetchTripMembers, fetchTrips, joinTrip, updateTripMemberRole } from './tripApi'
+import {
+  createChecklistItem,
+  createInviteCode,
+  createTrip,
+  deleteChecklistItem,
+  deleteScheduleItem,
+  deleteTrip,
+  fetchChecklistItems,
+  fetchTripMembers,
+  fetchTrips,
+  joinTrip,
+  updateTripMemberRole,
+} from './tripApi'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -110,5 +122,53 @@ describe('tripApi', () => {
       method: 'PATCH',
       body: JSON.stringify({ memberRole: 'VIEWER' }),
     }))
+  })
+
+  it('uses the documented checklist item endpoints with authentication', async () => {
+    const checklistItem = {
+      checklistItemId: 99,
+      tripId: 9,
+      assigneeUserId: 20,
+      title: '여권 챙기기',
+      done: false,
+      dueAt: '2026-07-01T09:00:00',
+      createdAt: '2026-06-23T10:00:00',
+      completedAt: null,
+    }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      if (init?.method === 'DELETE') return new Response(null, { status: 204 })
+      if (init?.method === 'POST') return new Response(JSON.stringify(checklistItem), { status: 201 })
+      return new Response(JSON.stringify([checklistItem]), { status: 200 })
+    })
+
+    const items = await fetchChecklistItems('token', 9)
+    const created = await createChecklistItem('token', 9, {
+      title: '여권 챙기기',
+      assigneeUserId: 20,
+      dueAt: '2026-07-01T09:00:00',
+    })
+    await deleteChecklistItem('token', 9, 99)
+
+    expect(items).toEqual([checklistItem])
+    expect(created).toEqual(checklistItem)
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('/api/trips/9/checklist-items'),
+      expect.objectContaining({ method: 'GET', headers: expect.objectContaining({ Authorization: 'Bearer token' }) }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('/api/trips/9/checklist-items'),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ title: '여권 챙기기', assigneeUserId: 20, dueAt: '2026-07-01T09:00:00' }),
+        headers: expect.objectContaining({ Authorization: 'Bearer token', 'Content-Type': 'application/json' }),
+      }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining('/api/trips/9/checklist-items/99'),
+      expect.objectContaining({ method: 'DELETE', headers: expect.objectContaining({ Authorization: 'Bearer token' }) }),
+    )
   })
 })

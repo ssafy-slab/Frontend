@@ -5,8 +5,8 @@ import type { Trip } from '@/entities/travel/model/travel'
 import type { AuthUser } from '@/entities/auth/api/authApi'
 import { createChatMessagePayload, createChatSubscribePayload, fetchChatMessages, getChatSocketUrl } from '@/entities/chat/api/chatApi'
 import type { ChatMessageResponse, ChatSocketMessage } from '@/entities/chat/api/chatApi'
-import { createInviteCode, deleteScheduleItem, fetchTripMembers, updateTripMemberRole } from '@/entities/travel/api/tripApi'
-import type { TripMemberResponse, TripMemberRole } from '@/entities/travel/api/tripApi'
+import { createChecklistItem, createInviteCode, deleteChecklistItem, deleteScheduleItem, fetchChecklistItems, fetchTripMembers, updateTripMemberRole } from '@/entities/travel/api/tripApi'
+import type { ChecklistItemResponse, TripMemberResponse, TripMemberRole } from '@/entities/travel/api/tripApi'
 import { canInviteTripMembers } from '@/entities/travel/model/tripAccess'
 
 const props = defineProps<{
@@ -55,6 +55,8 @@ const showMemberModal = ref(false)
 const showOrderModal = ref(false)
 const inviteCode = ref('')
 const isSaving = ref(false)
+const isSavingChecklist = ref(false)
+const isLoadingChecklist = ref(false)
 const isLoadingMembers = ref(false)
 const isLoadingMessages = ref(false)
 const chatSocket = ref<WebSocket | null>(null)
@@ -69,7 +71,8 @@ const inviteDraft = reactive({
   role: '편집 가능',
   message: '',
 })
-const checklist = ref<{ id: number; text: string; done: boolean }[]>([])
+const checklistTitle = ref('')
+const checklist = ref<ChecklistItemResponse[]>([])
 const messages = ref<Message[]>([])
 const scheduleItems = ref<ScheduleItem[]>([])
 
@@ -113,6 +116,67 @@ async function loadMembers() {
   } finally {
     isLoadingMembers.value = false
   }
+}
+
+async function loadChecklistItems() {
+  if (!props.accessToken || !props.trip?.id) {
+    checklist.value = []
+    return
+  }
+
+  isLoadingChecklist.value = true
+  try {
+    checklist.value = await fetchChecklistItems(props.accessToken, props.trip.id)
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : '체크리스트를 불러오지 못했습니다.')
+  } finally {
+    isLoadingChecklist.value = false
+  }
+}
+
+async function addChecklistItem() {
+  const title = checklistTitle.value.trim()
+  if (!title) return
+  if (!props.accessToken || !props.trip?.id) {
+    emit('saved', '로그인이 필요합니다.')
+    return
+  }
+
+  isSavingChecklist.value = true
+  try {
+    const created = await createChecklistItem(props.accessToken, props.trip.id, { title })
+    checklist.value = [...checklist.value, created]
+    checklistTitle.value = ''
+    emit('saved', '체크리스트가 추가되었습니다.')
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : '체크리스트를 추가하지 못했습니다.')
+  } finally {
+    isSavingChecklist.value = false
+  }
+}
+
+async function removeChecklistItem(item: ChecklistItemResponse) {
+  if (!props.accessToken || !props.trip?.id) {
+    emit('saved', '로그인이 필요합니다.')
+    return
+  }
+
+  isSavingChecklist.value = true
+  try {
+    await deleteChecklistItem(props.accessToken, props.trip.id, item.checklistItemId)
+    checklist.value = checklist.value.filter((current) => current.checklistItemId !== item.checklistItemId)
+    emit('saved', `${item.title}을(를) 삭제했습니다.`)
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : '체크리스트를 삭제하지 못했습니다.')
+  } finally {
+    isSavingChecklist.value = false
+  }
+}
+
+function toggleChecklistItem(item: ChecklistItemResponse) {
+  checklist.value = checklist.value.map((current) => (
+    current.checklistItemId === item.checklistItemId ? { ...current, done: !current.done } : current
+  ))
 }
 
 function toChatMessage(message: ChatMessageResponse): Message {
@@ -337,9 +401,11 @@ async function confirmRemoveScheduleItem() {
 
 onMounted(() => {
   loadMembers()
+  void loadChecklistItems()
   void resetChat()
 })
 watch(() => [props.accessToken, props.trip?.id, props.trip?.tripType], loadMembers)
+watch(() => [props.accessToken, props.trip?.id], loadChecklistItems)
 watch(() => [props.accessToken, props.trip?.id], () => {
   void resetChat()
 })
@@ -457,15 +523,56 @@ onBeforeUnmount(closeChatSocket)
             </h3>
             <span class="text-sm font-black text-brand-500">{{ doneCount }}/{{ checklist.length }} 완료</span>
           </div>
-          <label
+          <div class="mt-3 flex gap-2">
+            <input
+              v-model="checklistTitle"
+              data-testid="checklist-title-input"
+              class="brand-input h-10 min-w-0 flex-1 rounded-lg px-3 text-sm outline-none"
+              placeholder="준비물을 입력하세요"
+              :disabled="isSavingChecklist"
+              @keyup.enter="addChecklistItem"
+            />
+            <button
+              class="grid size-10 shrink-0 place-items-center rounded-lg bg-brand-500 text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label="체크리스트 추가"
+              :disabled="isSavingChecklist || !checklistTitle.trim()"
+              @click="addChecklistItem"
+            >
+              <Plus :size="18" />
+            </button>
+          </div>
+          <p v-if="isLoadingChecklist" class="mt-3 rounded-lg bg-brand-50 px-3 py-2 text-sm font-black text-brand-600">
+            체크리스트를 불러오는 중입니다.
+          </p>
+          <p v-else-if="checklist.length === 0" class="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm font-bold text-slate-500">
+            아직 등록된 체크리스트가 없습니다.
+          </p>
+          <div
             v-for="item in checklist"
-            :key="item.id"
+            v-else
+            :key="item.checklistItemId"
+            :data-testid="`checklist-row-${item.checklistItemId}`"
             class="check-row mt-3 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600 transition"
             :class="item.done ? 'text-slate-400 line-through' : 'hover:bg-brand-50'"
           >
-            <input v-model="item.done" type="checkbox" class="size-4 accent-brand-500" />
-            {{ item.text }}
-          </label>
+            <input
+              :checked="item.done"
+              type="checkbox"
+              class="size-4 accent-brand-500"
+              :data-testid="`checklist-done-${item.checklistItemId}`"
+              @change="toggleChecklistItem(item)"
+            />
+            <span class="min-w-0 flex-1 truncate">{{ item.title }}</span>
+            <button
+              class="grid size-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+              :aria-label="`${item.title} 삭제`"
+              :data-testid="`delete-checklist-${item.checklistItemId}`"
+              :disabled="isSavingChecklist"
+              @click="removeChecklistItem(item)"
+            >
+              <Trash2 :size="15" />
+            </button>
+          </div>
         </section>
       </aside>
     </div>
