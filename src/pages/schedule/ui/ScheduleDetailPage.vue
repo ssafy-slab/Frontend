@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { CalendarCheck, ChevronDown, Link, ListOrdered, MapPin, Pencil, Plus, Send, Trash2, UserCog, X } from 'lucide-vue-next'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { CalendarCheck, ChevronDown, Link, ListOrdered, MapPin, Pencil, Plus, Search, Send, Trash2, UserCog, X } from 'lucide-vue-next'
 import type { Trip } from '@/entities/travel/model/travel'
 import type { AuthUser } from '@/entities/auth/api/authApi'
 import { createChatMessagePayload, createChatSubscribePayload, fetchChatMessages, getChatSocketUrl } from '@/entities/chat/api/chatApi'
@@ -20,6 +20,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   change: [view: string]
   saved: [message: string]
+  openPlace: [placeId: number]
 }>()
 
 type ScheduleItem = {
@@ -72,18 +73,17 @@ const pendingChatMessages = ref<string[]>([])
 const chatLoadRequestId = ref(0)
 const deleteScheduleTarget = ref<ScheduleItem | null>(null)
 const editingSchedule = ref<ScheduleItem | null>(null)
+const selectedScheduleItemId = ref<number | null>(null)
 const canInviteMembers = computed(() => canInviteTripMembers(props.trip))
+const canManageTripMembers = computed(() => canInviteMembers.value && props.currentUser?.userId === props.trip?.ownerUserId)
 const members = ref<Member[]>([])
-const inviteDraft = reactive({
-  email: '',
-  role: '편집 가능',
-  message: '',
-})
 const checklistTitle = ref('')
 const checklist = ref<ChecklistItemResponse[]>([])
 const messages = ref<Message[]>([])
 const scheduleItems = ref<ScheduleItem[]>([])
 const placeOptions = ref<Place[]>([])
+const placeSearchQuery = ref('')
+const selectedSchedulePlaceTitle = ref('')
 const scheduleDraft = reactive({
   mode: 'free' as 'free' | 'place',
   placeId: '',
@@ -93,15 +93,28 @@ const scheduleDraft = reactive({
   endTime: '11:00',
   memo: '',
 })
+let placeSearchRequestId = 0
 
 const doneCount = computed(() => checklist.value.filter((item) => item.done).length)
 const scheduleGroups = computed(() => {
   const groups = new Map<string, ScheduleItem[]>()
-  scheduleItems.value.forEach((item) => {
+  sortScheduleItems(scheduleItems.value).forEach((item) => {
     groups.set(item.date, [...(groups.get(item.date) ?? []), item])
   })
   return Array.from(groups, ([date, items]) => ({ date, items }))
 })
+
+function compareScheduleItems(left: ScheduleItem, right: ScheduleItem) {
+  const dateCompare = left.date.localeCompare(right.date)
+  if (dateCompare !== 0) return dateCompare
+  const timeCompare = left.time.localeCompare(right.time)
+  if (timeCompare !== 0) return timeCompare
+  return left.id - right.id
+}
+
+function sortScheduleItems(items: ScheduleItem[]) {
+  return [...items].sort(compareScheduleItems)
+}
 
 function getMemberRoleLabel(role: TripMemberRole) {
   if (role === 'OWNER') return '소유자'
@@ -144,6 +157,29 @@ function toApiTime(time: string) {
   return time.length === 5 ? `${time}:00` : time
 }
 
+function timeToMinutes(time: string) {
+  const [hours = 0, minutes = 0] = time.split(':').map(Number)
+  return hours * 60 + minutes
+}
+
+function minutesToTime(totalMinutes: number) {
+  const clampedMinutes = Math.min(totalMinutes, 23 * 60 + 59)
+  const hours = Math.floor(clampedMinutes / 60)
+  const minutes = clampedMinutes % 60
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+function getDefaultEndTime(startTime: string) {
+  return minutesToTime(timeToMinutes(startTime) + 60)
+}
+
+function ensureValidEndTime() {
+  if (!scheduleDraft.startTime) return
+  if (!scheduleDraft.endTime || timeToMinutes(scheduleDraft.endTime) <= timeToMinutes(scheduleDraft.startTime)) {
+    scheduleDraft.endTime = getDefaultEndTime(scheduleDraft.startTime)
+  }
+}
+
 function getDefaultScheduleDate() {
   return props.trip?.startDate ?? new Date().toISOString().slice(0, 10)
 }
@@ -159,36 +195,65 @@ function toScheduleItem(item: TripScheduleResponse): ScheduleItem {
     title: item.title,
     note: item.memo ?? '',
     category: `Day ${item.dayNo}`,
-    location: item.placeId ? `장소 #${item.placeId}` : '자유 일정',
+    location: item.placeId ? '등록 여행지' : '자유 일정',
   }
 }
 
-async function loadPlaceOptions() {
-  if (placeOptions.value.length > 0) return
+async function searchSchedulePlaces() {
+  const keyword = placeSearchQuery.value.trim()
+  if (keyword.length < 2) {
+    placeOptions.value = []
+    return
+  }
 
+  const requestId = ++placeSearchRequestId
   isLoadingPlaces.value = true
   try {
-    placeOptions.value = (await fetchPlaces({ page: 0, size: 20 })).content
+    const result = await fetchPlaces({ keyword, page: 0, size: 8 })
+    if (requestId === placeSearchRequestId) {
+      placeOptions.value = result.content
+    }
   } catch (error) {
-    emit('saved', error instanceof Error ? error.message : '장소 목록을 불러오지 못했습니다.')
+    if (requestId === placeSearchRequestId) {
+      placeOptions.value = []
+      emit('saved', error instanceof Error ? error.message : '장소 목록을 불러오지 못했습니다.')
+    }
   } finally {
-    isLoadingPlaces.value = false
+    if (requestId === placeSearchRequestId) {
+      isLoadingPlaces.value = false
+    }
   }
+}
+
+function handleSchedulePlaceSearchInput() {
+  if (selectedSchedulePlaceTitle.value && placeSearchQuery.value.trim() !== selectedSchedulePlaceTitle.value) {
+    scheduleDraft.placeId = ''
+    selectedSchedulePlaceTitle.value = ''
+  }
+  void searchSchedulePlaces()
 }
 
 function selectScheduleMode(mode: 'free' | 'place') {
   scheduleDraft.mode = mode
   if (mode === 'free') {
     scheduleDraft.placeId = ''
+    placeSearchQuery.value = ''
+    selectedSchedulePlaceTitle.value = ''
+    placeOptions.value = []
     return
   }
-  void loadPlaceOptions()
+  void searchSchedulePlaces()
 }
 
-function applySelectedPlaceTitle() {
-  const selectedPlace = placeOptions.value.find((place) => String(place.id) === scheduleDraft.placeId)
-  if (selectedPlace && !scheduleDraft.title.trim()) {
-    scheduleDraft.title = selectedPlace.title
+function selectSchedulePlace(place: Place) {
+  placeSearchRequestId += 1
+  scheduleDraft.placeId = String(place.id)
+  placeSearchQuery.value = place.title
+  selectedSchedulePlaceTitle.value = place.title
+  placeOptions.value = []
+  isLoadingPlaces.value = false
+  if (!scheduleDraft.title.trim()) {
+    scheduleDraft.title = place.title
   }
 }
 
@@ -200,7 +265,7 @@ async function loadScheduleItems() {
 
   isLoadingSchedules.value = true
   try {
-    scheduleItems.value = (await fetchTripSchedules(props.accessToken, props.trip.id)).map(toScheduleItem)
+    scheduleItems.value = sortScheduleItems((await fetchTripSchedules(props.accessToken, props.trip.id)).map(toScheduleItem))
   } catch (error) {
     emit('saved', error instanceof Error ? error.message : '일정을 불러오지 못했습니다.')
   } finally {
@@ -212,12 +277,15 @@ function resetScheduleDraft(item?: ScheduleItem) {
   editingSchedule.value = item ?? null
   scheduleDraft.mode = item?.placeId ? 'place' : 'free'
   scheduleDraft.placeId = item?.placeId ? String(item.placeId) : ''
+  placeSearchQuery.value = item?.placeId ? item.title : ''
+  selectedSchedulePlaceTitle.value = item?.placeId ? item.title : ''
+  placeOptions.value = []
   scheduleDraft.title = item?.title ?? ''
   scheduleDraft.date = item?.date ?? getDefaultScheduleDate()
   scheduleDraft.startTime = item?.time ?? '10:00'
   scheduleDraft.endTime = item?.endTime ?? '11:00'
   scheduleDraft.memo = item?.note ?? ''
-  if (scheduleDraft.mode === 'place') void loadPlaceOptions()
+  if (scheduleDraft.mode === 'place') void searchSchedulePlaces()
 }
 
 function openCreateScheduleModal() {
@@ -230,7 +298,22 @@ function openEditScheduleModal(item: ScheduleItem) {
   showScheduleModal.value = true
 }
 
+function openScheduleFlow(item: ScheduleItem) {
+  selectedScheduleItemId.value = item.id
+  showOrderModal.value = true
+  void nextTick(() => {
+    document.querySelector(`[data-schedule-flow-item="${item.id}"]`)?.scrollIntoView({ block: 'center' })
+  })
+}
+
+function openFlowPlaceDetail(item: ScheduleItem) {
+  if (!item.placeId) return
+  showOrderModal.value = false
+  emit('openPlace', item.placeId)
+}
+
 function buildSchedulePayload(): TripSchedulePayload {
+  ensureValidEndTime()
   const sameDateItems = scheduleItems.value.filter((item) => item.date === scheduleDraft.date)
   const editingSortOrder = editingSchedule.value
     ? sameDateItems.findIndex((item) => item.id === editingSchedule.value?.id) + 1
@@ -263,9 +346,9 @@ async function saveScheduleItem() {
       ? await updateTripSchedule(props.accessToken, props.trip.id, editingItem.scheduleItemId, payload)
       : await createTripSchedule(props.accessToken, props.trip.id, payload)
     const nextItem = toScheduleItem(saved)
-    scheduleItems.value = editingItem
+    scheduleItems.value = sortScheduleItems(editingItem
       ? scheduleItems.value.map((item) => (item.id === nextItem.id ? nextItem : item))
-      : [...scheduleItems.value, nextItem]
+      : [...scheduleItems.value, nextItem])
     showScheduleModal.value = false
     editingSchedule.value = null
     emit('saved', editingItem ? '일정이 수정되었습니다.' : '일정이 추가되었습니다.')
@@ -484,19 +567,14 @@ function sendMessage() {
   }
 }
 
-function sendInvite() {
-  if (!inviteDraft.email.trim()) return
-  emit('saved', `${inviteDraft.email} 님은 초대 코드로 참여할 수 있습니다.`)
-  inviteDraft.email = ''
-  inviteDraft.message = ''
-  inviteDraft.role = '편집 가능'
-  showInviteModal.value = false
-}
-
 async function generateInviteCode() {
   if (!props.trip?.id) return
   if (!props.accessToken) {
     emit('saved', '로그인이 필요합니다.')
+    return
+  }
+  if (!canManageTripMembers.value) {
+    emit('saved', '소유자만 초대 코드를 만들 수 있습니다.')
     return
   }
   if (props.trip.tripType && props.trip.tripType.toUpperCase() !== 'TEAM') {
@@ -517,7 +595,7 @@ async function generateInviteCode() {
 }
 
 async function changeMemberRole(member: Member) {
-  if (!props.accessToken || !props.trip?.id || member.owner) return
+  if (!props.accessToken || !props.trip?.id || member.owner || !canManageTripMembers.value) return
   const nextRole = getApiMemberRole(member.role)
   if (member.apiRole === nextRole) return
 
@@ -586,9 +664,10 @@ onBeforeUnmount(closeChatSocket)
           <span
             v-for="member in members.slice(0, 4)"
             :key="member.id"
+            :data-testid="`member-avatar-${member.id}`"
             class="-ml-2 grid size-8 first:ml-0 place-items-center rounded-full border-2 border-white bg-brand-100 text-xs font-black text-brand-600"
           >
-            {{ member.name }}
+            {{ member.name.slice(0, 1) }}
           </span>
         </button>
         <button v-if="canInviteMembers" class="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-black text-white hover:bg-brand-600" @click="showInviteModal = true">
@@ -599,15 +678,21 @@ onBeforeUnmount(closeChatSocket)
     </header>
 
     <div class="grid gap-4 xl:grid-cols-[280px_1fr_300px]">
-      <aside class="brand-card overflow-hidden rounded-xl">
-        <div class="flex items-center justify-between border-b border-slate-200 bg-slate-100 px-4 py-3">
+      <aside class="brand-card flex max-h-[680px] min-h-0 flex-col overflow-hidden rounded-xl xl:max-h-[calc(100vh-180px)]">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-100 px-4 py-3">
           <h2 class="font-black text-slate-950">전체 일정</h2>
-          <button data-testid="open-schedule-form" class="inline-flex items-center gap-1 rounded-lg bg-brand-500 px-3 py-2 text-xs font-black text-white hover:bg-brand-600" aria-label="일정 추가" @click="openCreateScheduleModal">
-            <Plus :size="15" />
-            일정 추가
-          </button>
+          <div class="flex items-center gap-1.5">
+            <button data-testid="find-places-from-schedule" class="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-2 text-xs font-black text-brand-500 ring-1 ring-brand-100 hover:bg-brand-50" @click="emit('change', 'explore')">
+              <Search :size="14" />
+              여행지 찾기
+            </button>
+            <button data-testid="open-schedule-form" class="inline-flex items-center gap-1 rounded-lg bg-brand-500 px-3 py-2 text-xs font-black text-white hover:bg-brand-600" aria-label="일정 추가" @click="openCreateScheduleModal">
+              <Plus :size="15" />
+              일정 추가
+            </button>
+          </div>
         </div>
-        <div class="space-y-4 p-4">
+        <div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
           <p v-if="isLoadingSchedules" class="rounded-lg bg-brand-50 px-3 py-2 text-sm font-black text-brand-600">
             일정을 불러오는 중입니다.
           </p>
@@ -623,21 +708,27 @@ onBeforeUnmount(closeChatSocket)
               <article
                 v-for="item in group.items"
                 :key="item.id"
-                class="rounded-lg border bg-white p-3 shadow-sm transition hover:border-brand-500"
-                :class="item.active ? 'border-l-4 border-brand-500' : 'border-slate-200'"
+                class="grid grid-cols-[minmax(0,1fr)_76px] items-center gap-3 rounded-lg border bg-white p-3 shadow-sm transition hover:border-brand-500"
+                :class="[item.active ? 'border-l-4 border-brand-500' : 'border-slate-200', item.placeId ? 'cursor-pointer hover:bg-brand-50/40' : 'cursor-pointer hover:bg-slate-50']"
+                :data-testid="`schedule-card-${item.scheduleItemId}`"
+                @click="openScheduleFlow(item)"
               >
-                <div class="flex items-start justify-between gap-2">
-                  <div class="min-w-0">
-                    <h4 class="text-sm font-black text-slate-800">{{ item.time }} {{ item.title }}</h4>
-                    <p class="mt-1 flex items-center gap-1 text-xs font-bold text-slate-500">
-                      <MapPin v-if="item.active" :size="14" />
-                      {{ item.note }}
-                    </p>
-                  </div>
-                  <button class="grid size-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-red-50 hover:text-red-500" :aria-label="`${item.title} 삭제`" @click="requestRemoveScheduleItem(item)">
+                <div class="min-w-0">
+                  <h4 class="truncate text-sm font-black text-slate-800">{{ item.time }} {{ item.title }}</h4>
+                  <p
+                    v-if="item.note"
+                    class="mt-1 line-clamp-2 break-words text-xs font-bold leading-5 text-slate-500"
+                    :data-testid="`schedule-note-${item.scheduleItemId}`"
+                  >
+                    <MapPin v-if="item.active" :size="14" class="mr-1 inline-block align-[-2px]" />
+                    {{ item.note }}
+                  </p>
+                </div>
+                <div class="grid grid-cols-2 gap-1 justify-self-end" :data-testid="`schedule-actions-${item.scheduleItemId}`">
+                  <button class="grid size-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-red-50 hover:text-red-500" :aria-label="`${item.title} 삭제`" @click.stop="requestRemoveScheduleItem(item)">
                     <Trash2 :size="16" />
                   </button>
-                  <button class="grid size-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-brand-50 hover:text-brand-500" :aria-label="`${item.title} 수정`" :data-testid="`edit-schedule-${item.scheduleItemId}`" @click="openEditScheduleModal(item)">
+                  <button class="grid size-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-brand-50 hover:text-brand-500" :aria-label="`${item.title} 수정`" :data-testid="`edit-schedule-${item.scheduleItemId}`" @click.stop="openEditScheduleModal(item)">
                     <Pencil :size="16" />
                   </button>
                 </div>
@@ -776,21 +867,35 @@ onBeforeUnmount(closeChatSocket)
           <div class="space-y-3">
             <label v-if="scheduleDraft.mode === 'place'" class="block">
               <span class="mb-1.5 block text-xs font-black text-slate-950">장소</span>
-              <span class="select-wrap select-wrap-full">
-                <select
-                  v-model="scheduleDraft.placeId"
-                  data-testid="schedule-place-select"
-                  class="brand-input select-control h-10 w-full rounded-lg px-3 text-sm outline-none"
-                  :disabled="isLoadingPlaces"
-                  @change="applySelectedPlaceTitle"
-                >
-                  <option value="">장소를 선택하세요</option>
-                  <option v-for="place in placeOptions" :key="place.id" :value="String(place.id)">
-                    {{ place.title }}
-                  </option>
-                </select>
-                <ChevronDown :size="15" class="select-chevron" />
-              </span>
+              <div class="relative">
+                <div class="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3">
+                  <Search :size="15" class="text-slate-400" />
+                  <input
+                    v-model="placeSearchQuery"
+                    data-testid="schedule-place-search-input"
+                    class="min-w-0 flex-1 text-sm font-bold text-slate-900 outline-none"
+                    placeholder="여행지 이름으로 검색"
+                    @input="handleSchedulePlaceSearchInput"
+                  />
+                </div>
+                <div v-if="placeOptions.length || isLoadingPlaces" class="absolute left-0 right-0 z-40 mt-2 max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+                  <p v-if="isLoadingPlaces" class="px-4 py-3 text-sm font-bold text-slate-500">여행지를 검색하는 중입니다.</p>
+                  <button
+                    v-for="place in placeOptions"
+                    :key="place.id"
+                    type="button"
+                    class="flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
+                    :data-testid="`schedule-place-result-${place.id}`"
+                    @click="selectSchedulePlace(place)"
+                  >
+                    <MapPin :size="16" class="mt-0.5 shrink-0 text-brand-500" />
+                    <span class="min-w-0">
+                      <span class="block truncate text-sm font-black text-slate-950">{{ place.title }}</span>
+                      <span class="mt-1 block truncate text-xs font-bold text-slate-500">{{ place.location }}</span>
+                    </span>
+                  </button>
+                </div>
+              </div>
             </label>
             <label class="block">
               <span class="mb-1.5 block text-xs font-black text-slate-950">제목</span>
@@ -803,7 +908,7 @@ onBeforeUnmount(closeChatSocket)
             <div class="grid grid-cols-2 gap-2">
               <label class="block">
                 <span class="mb-1.5 block text-xs font-black text-slate-950">시작</span>
-                <input v-model="scheduleDraft.startTime" data-testid="schedule-start-input" type="time" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" />
+                <input v-model="scheduleDraft.startTime" data-testid="schedule-start-input" type="time" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" @change="ensureValidEndTime" />
               </label>
               <label class="block">
                 <span class="mb-1.5 block text-xs font-black text-slate-950">종료</span>
@@ -829,43 +934,58 @@ onBeforeUnmount(closeChatSocket)
 
     <Transition name="modal-fade">
       <div v-if="showOrderModal" class="fixed inset-0 z-[80] grid place-items-center bg-slate-900/55 p-4">
-        <section class="modal-panel w-full max-w-lg rounded-2xl bg-white p-4 shadow-2xl sm:p-5">
-          <div class="mb-3 flex items-start justify-between gap-4">
+        <section data-testid="schedule-flow-modal" class="modal-panel w-full max-w-lg overflow-x-hidden rounded-2xl bg-white p-5 shadow-2xl sm:p-6">
+          <div class="mb-5 flex items-start justify-between gap-4">
             <div>
               <h2 class="flex items-center gap-2 text-lg font-black text-slate-950">
                 <ListOrdered :size="20" class="text-brand-500" />
                 일정 순서 확인
               </h2>
-              <p class="mt-1 text-xs font-semibold text-slate-500">등록된 장소와 시간을 날짜별로 확인합니다.</p>
+              <p class="mt-1.5 text-xs font-semibold text-slate-500">등록된 장소와 시간을 날짜별로 확인합니다.</p>
             </div>
             <button class="text-slate-500" aria-label="닫기" @click="showOrderModal = false">
               <X :size="20" />
             </button>
           </div>
 
-          <div class="max-h-[56vh] overflow-y-auto pr-1">
-            <section v-for="group in scheduleGroups" :key="group.date" class="pb-6 last:pb-0">
-              <div class="mb-3 flex items-center gap-2">
+          <div class="max-h-[44vh] overflow-x-hidden overflow-y-auto pb-4 pr-1">
+            <section v-for="group in scheduleGroups" :key="group.date" class="pb-7 last:pb-0">
+              <div class="mb-4 flex items-center gap-2.5">
                 <span class="grid size-8 place-items-center rounded-full bg-brand-500 text-white shadow-sm shadow-indigo-200">
                   <CalendarCheck :size="16" />
                 </span>
                 <h3 class="text-lg font-black text-brand-500">{{ group.date }}</h3>
               </div>
 
-              <div class="relative ml-4 border-l-2 border-slate-200 pl-4 sm:ml-4 sm:pl-5">
-                <article v-for="item in group.items" :key="item.id" class="relative mb-3 last:mb-0">
-                  <span class="absolute -left-[25px] top-6 size-4 rounded-full border-[3px] border-white bg-brand-500 shadow-sm sm:-left-[29px]" />
-                  <div class="grid gap-2 sm:grid-cols-[92px_1fr]">
-                    <p class="pt-5 text-xs font-bold text-slate-400">{{ item.time }}</p>
-                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
+              <div class="relative ml-4 border-l-2 border-slate-200 pl-5 sm:ml-4 sm:pl-6">
+                <article v-for="item in group.items" :key="item.id" class="relative mb-4 last:mb-0">
+                  <span class="absolute -left-[27px] top-7 size-4 rounded-full border-[3px] border-white bg-brand-500 shadow-sm sm:-left-[31px]" />
+                  <div class="grid min-w-0 gap-3 sm:grid-cols-[80px_minmax(0,1fr)]">
+                    <p class="pt-6 text-xs font-bold text-slate-400">{{ item.time }}</p>
+                    <div
+                      class="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4 transition"
+                      :class="selectedScheduleItemId === item.id ? 'ring-2 ring-brand-300 bg-brand-50/50' : ''"
+                      :data-schedule-flow-item="item.id"
+                      :data-testid="`schedule-flow-item-${item.scheduleItemId}`"
+                    >
+                      <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div class="min-w-0">
                           <p class="flex items-center gap-1.5 text-xs font-black text-brand-500">
                             <span class="size-1.5 rounded-full bg-violet-500" />
                             {{ item.category }}
                           </p>
-                          <h4 class="mt-1.5 text-base font-black text-slate-950">{{ item.title }}</h4>
-                          <p class="mt-1 text-xs font-bold leading-5 text-slate-500">{{ item.note }} / {{ item.location }}</p>
+                          <h4 class="mt-2 break-words text-base font-black text-slate-950">{{ item.title }}</h4>
+                          <p v-if="item.note" class="mt-2 break-words text-xs font-bold leading-5 text-slate-500 [overflow-wrap:anywhere]">
+                            {{ item.note }}
+                          </p>
+                          <button
+                            v-if="item.placeId"
+                            data-testid="open-flow-place-detail"
+                            class="mt-3 inline-flex h-8 items-center gap-1 rounded-lg bg-white px-2.5 text-[11px] font-black text-brand-500 ring-1 ring-brand-100 transition hover:bg-brand-50"
+                            @click="openFlowPlaceDetail(item)"
+                          >
+                            여행지 상세 보기
+                          </button>
                         </div>
                         <button
                           class="grid size-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-slate-100 hover:text-slate-600"
@@ -882,7 +1002,7 @@ onBeforeUnmount(closeChatSocket)
             </section>
           </div>
 
-          <div class="mt-3 grid gap-2 rounded-xl bg-brand-50 p-3 text-xs font-bold leading-5 text-brand-700 sm:grid-cols-3">
+          <div class="mt-5 grid gap-3 rounded-xl bg-brand-50 p-4 text-xs font-bold leading-5 text-brand-700 sm:grid-cols-3">
             <div>
               <span class="block text-[11px] font-black text-brand-500">총 일정</span>
               {{ scheduleItems.length }}개
@@ -950,7 +1070,7 @@ onBeforeUnmount(closeChatSocket)
           </p>
           <div class="space-y-3">
             <article v-for="member in members" :key="member.id" class="flex items-center gap-3 rounded-xl bg-slate-50 p-3">
-              <span class="grid size-9 place-items-center rounded-full bg-brand-100 text-sm font-black text-brand-600">{{ member.name }}</span>
+              <span class="grid size-9 place-items-center rounded-full bg-brand-100 text-sm font-black text-brand-600">{{ member.name.slice(0, 1) }}</span>
               <div class="min-w-0 flex-1">
                 <p class="font-black text-slate-950">{{ member.name }}</p>
                 <p class="truncate text-xs font-semibold text-slate-500">{{ member.email ?? '팀원' }}</p>
@@ -958,16 +1078,19 @@ onBeforeUnmount(closeChatSocket)
               <span v-if="member.owner" class="rounded-lg bg-slate-200 px-3 py-2 text-xs font-black text-slate-700">
                 소유자
               </span>
-              <span v-else class="select-wrap">
+              <span v-else-if="canManageTripMembers" class="select-wrap">
                 <select v-model="member.role" class="brand-input select-control h-9 rounded-lg px-2 text-xs font-bold outline-none" :disabled="isSaving" @change="changeMemberRole(member)">
                   <option>편집 가능</option>
                   <option>보기만 가능</option>
                 </select>
                 <ChevronDown :size="14" class="select-chevron" />
               </span>
+              <span v-else class="rounded-lg bg-white px-3 py-2 text-xs font-black text-slate-500 ring-1 ring-slate-200">
+                {{ member.role }}
+              </span>
             </article>
           </div>
-          <button v-if="canInviteMembers" class="btn-primary mt-5 h-10 w-full rounded-lg text-sm" @click="showInviteModal = true; showMemberModal = false">
+          <button v-if="canManageTripMembers" class="btn-primary mt-5 h-10 w-full rounded-lg text-sm" @click="showInviteModal = true; showMemberModal = false">
             새 팀원 초대하기
           </button>
         </section>
@@ -983,11 +1106,11 @@ onBeforeUnmount(closeChatSocket)
               <X :size="22" />
             </button>
           </div>
-          <section class="mb-4 rounded-xl bg-brand-50 p-3">
+          <section class="rounded-xl bg-brand-50 p-3">
             <div class="flex items-center justify-between gap-3">
               <div>
                 <p class="text-xs font-black text-brand-500">팀 여행 초대 코드</p>
-                <p class="mt-1 text-sm font-bold text-slate-600">코드를 공유하면 상대가 일정에 바로 참여할 수 있습니다.</p>
+                <p class="mt-1 text-sm font-bold text-slate-600">코드를 공유하면 팀원이 일정에 바로 참여할 수 있습니다.</p>
               </div>
               <button class="h-9 shrink-0 rounded-lg bg-brand-500 px-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-60" :disabled="isSaving" @click="generateInviteCode">
                 {{ isSaving ? '생성 중' : '코드 생성' }}
@@ -996,30 +1119,10 @@ onBeforeUnmount(closeChatSocket)
             <p v-if="inviteCode" class="mt-3 rounded-lg bg-white px-3 py-2 text-center text-lg font-black tracking-widest text-slate-950">
               {{ inviteCode }}
             </p>
+            <p v-else class="mt-3 rounded-lg bg-white/70 px-3 py-2 text-center text-xs font-bold text-slate-500">
+              코드 생성을 누르면 초대 코드가 표시됩니다.
+            </p>
           </section>
-          <div class="space-y-3">
-            <label class="block">
-              <span class="mb-1.5 block text-xs font-black text-slate-950">이메일</span>
-              <input v-model="inviteDraft.email" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="friend@example.com" />
-            </label>
-            <label class="block">
-              <span class="mb-1.5 block text-xs font-black text-slate-950">권한</span>
-              <span class="select-wrap select-wrap-full">
-                <select v-model="inviteDraft.role" class="brand-input select-control h-10 w-full rounded-lg px-3 text-sm outline-none">
-                  <option>편집 가능</option>
-                  <option>보기만 가능</option>
-                </select>
-                <ChevronDown :size="15" class="select-chevron" />
-              </span>
-            </label>
-            <label class="block">
-              <span class="mb-1.5 block text-xs font-black text-slate-950">초대 메시지</span>
-              <input v-model="inviteDraft.message" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="같이 일정 짜보자!" />
-            </label>
-          </div>
-          <button class="btn-primary mt-5 h-10 w-full rounded-lg text-sm" @click="sendInvite">
-            초대 보내기
-          </button>
         </section>
       </div>
     </Transition>

@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+﻿import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ScheduleDetailPage from './ScheduleDetailPage.vue'
 import type { Trip } from '@/entities/travel/model/travel'
@@ -87,9 +87,10 @@ class MockWebSocket {
   }
 }
 
-function createTrip(tripType: string): Trip {
+function createTrip(tripType: string, ownerUserId = 10): Trip {
   return {
     id: 1,
+    ownerUserId,
     title: '테스트 일정',
     destination: tripType === 'TEAM' ? '팀 여행' : '개인 여행',
     period: '2026-07-01 - 2026-07-03',
@@ -106,6 +107,7 @@ function createTrip(tripType: string): Trip {
 
 describe('ScheduleDetailPage collaboration controls', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     MockWebSocket.instances = []
     vi.stubGlobal('WebSocket', MockWebSocket)
     fetchChatMessages.mockResolvedValue([
@@ -272,6 +274,33 @@ describe('ScheduleDetailPage collaboration controls', () => {
     const optionLabels = wrapper.findAll('select option').map((option) => option.text())
     expect(optionLabels).not.toContain('소유자')
     expect(wrapper.text()).toContain('소유자')
+  })
+
+  it('hides member role controls when the current user is not the trip owner', async () => {
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM', 10),
+        accessToken: 'token',
+        currentUser: {
+          userId: 20,
+          email: 'editor@example.com',
+          nickname: 'editor',
+          role: 'USER',
+          localAccount: true,
+        },
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('[aria-label="참여자 관리"]').trigger('click')
+
+    expect(wrapper.find('select').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('새 팀원 초대하기')
   })
 
   it('renders database members and removes the kick member action', async () => {
@@ -512,6 +541,89 @@ describe('ScheduleDetailPage collaboration controls', () => {
     expect(wrapper.text()).toContain('숙소 근처')
   })
 
+  it('keeps schedule card actions fixed and clamps long notes', async () => {
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="schedule-card-99"]').classes()).toContain('grid')
+    expect(wrapper.get('[data-testid="schedule-note-99"]').classes()).toContain('line-clamp-2')
+    expect(wrapper.get('[data-testid="schedule-actions-99"]').classes()).toEqual(expect.arrayContaining(['grid', 'grid-cols-2']))
+  })
+
+  it('opens the schedule flow modal focused on the clicked place schedule card', async () => {
+    fetchTripSchedules.mockResolvedValueOnce([
+      {
+        scheduleItemId: 120,
+        tripId: 1,
+        placeId: 100,
+        createdByUserId: 10,
+        dayNo: 1,
+        scheduleDate: '2026-07-01',
+        startTime: '10:00:00',
+        endTime: '11:00:00',
+        title: 'Haeundae Beach',
+        memo: 'long beach memo',
+        sortOrder: 1,
+        createdAt: '2026-06-23T10:00:00',
+        updatedAt: '2026-06-23T10:00:00',
+      },
+    ])
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="schedule-card-120"]').trigger('click')
+
+    expect(wrapper.get('[data-testid="schedule-flow-modal"]').text()).toContain('Haeundae Beach')
+    expect(wrapper.get('[data-testid="schedule-flow-modal"]').text()).toContain('long beach memo')
+    expect(wrapper.get('[data-testid="schedule-flow-modal"]').text()).not.toContain('장소 #100')
+    expect(wrapper.get('[data-testid="schedule-flow-item-120"]').classes()).toEqual(expect.arrayContaining(['ring-2', 'ring-brand-300']))
+    expect(wrapper.emitted('openPlace')).toBeUndefined()
+    await wrapper.get('[data-testid="open-flow-place-detail"]').trigger('click')
+
+    expect(wrapper.emitted('openPlace')).toEqual([[100]])
+  })
+
+  it('opens the schedule flow modal focused on the clicked free schedule card', async () => {
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="schedule-card-99"]').trigger('click')
+
+    expect(wrapper.get('[data-testid="schedule-flow-modal"]').text()).toContain('자유시간')
+    expect(wrapper.get('[data-testid="schedule-flow-item-99"]').classes()).toEqual(expect.arrayContaining(['ring-2', 'ring-brand-300']))
+    expect(wrapper.emitted('openPlace')).toBeUndefined()
+  })
+
   it('creates a free schedule item through the schedule API', async () => {
     const wrapper = mount(ScheduleDetailPage, {
       props: {
@@ -565,7 +677,10 @@ describe('ScheduleDetailPage collaboration controls', () => {
     await wrapper.get('[data-testid="open-schedule-form"]').trigger('click')
     await wrapper.get('[data-testid="schedule-place-tab"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="schedule-place-select"]').setValue('100')
+    await wrapper.get('[data-testid="schedule-place-search-input"]').setValue('Haeundae')
+    await flushPromises()
+    await wrapper.get('[data-testid="schedule-place-result-100"]').trigger('click')
+    expect(wrapper.find('[data-testid="schedule-place-result-100"]').exists()).toBe(false)
     await wrapper.get('[data-testid="schedule-title-input"]').setValue('Haeundae walk')
     await wrapper.get('[data-testid="schedule-date-input"]').setValue('2026-07-01')
     await wrapper.get('[data-testid="schedule-start-input"]').setValue('10:00')
@@ -573,13 +688,46 @@ describe('ScheduleDetailPage collaboration controls', () => {
     await wrapper.get('[data-testid="save-schedule-button"]').trigger('click')
     await flushPromises()
 
-    expect(fetchPlaces).toHaveBeenCalledWith(expect.objectContaining({ page: 0, size: 20 }))
+    expect(fetchPlaces).toHaveBeenCalledWith(expect.objectContaining({ keyword: 'Haeundae', page: 0, size: 8 }))
     expect(createTripSchedule).toHaveBeenCalledWith('token', 1, expect.objectContaining({
       placeId: 100,
       scheduleDate: '2026-07-01',
       startTime: '10:00:00',
       endTime: '11:30:00',
       title: 'Haeundae walk',
+    }))
+  })
+
+  it('clears the selected place when the place search text changes after selection', async () => {
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-schedule-form"]').trigger('click')
+    await wrapper.get('[data-testid="schedule-place-tab"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="schedule-place-search-input"]').setValue('Haeundae')
+    await flushPromises()
+    await wrapper.get('[data-testid="schedule-place-result-100"]').trigger('click')
+    await wrapper.get('[data-testid="schedule-place-search-input"]').setValue('Other place')
+    await wrapper.get('[data-testid="schedule-title-input"]').setValue('Changed place')
+    await wrapper.get('[data-testid="schedule-date-input"]').setValue('2026-07-01')
+    await wrapper.get('[data-testid="schedule-start-input"]').setValue('10:00')
+    await wrapper.get('[data-testid="save-schedule-button"]').trigger('click')
+    await flushPromises()
+
+    expect(createTripSchedule).toHaveBeenCalledWith('token', 1, expect.objectContaining({
+      placeId: null,
+      title: 'Changed place',
     }))
   })
 

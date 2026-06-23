@@ -86,7 +86,18 @@ export type TripSchedulePayload = {
   sortOrder: number
 }
 
-const fallbackTripImage = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80'
+export const tripThumbnailImages = [
+  'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=900&q=80',
+  'https://images.unsplash.com/photo-1546874177-9e664107314e?auto=format&fit=crop&w=900&q=80',
+  'https://images.unsplash.com/photo-1506812574058-fc75fa93fead?auto=format&fit=crop&w=900&q=80',
+  'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=900&q=80',
+  'https://images.unsplash.com/photo-1506816561089-5cc37b3aa9b0?auto=format&fit=crop&w=900&q=80',
+  'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80',
+]
+
+export function getTripThumbnailImage(seed = Math.floor(Math.random() * tripThumbnailImages.length)) {
+  return tripThumbnailImages[Math.abs(seed) % tripThumbnailImages.length] ?? tripThumbnailImages[0]!
+}
 
 function authHeaders(token: string, json = false) {
   return {
@@ -144,7 +155,7 @@ function getDday(startDate: string | null) {
 
 function toInitial(nickname: string) {
   const trimmed = nickname.trim()
-  return trimmed ? trimmed.slice(0, 2) : '?'
+  return trimmed ? trimmed.slice(0, 1) : '?'
 }
 
 export function toTrip(item: TripResponse | TripListResponse): Trip {
@@ -159,7 +170,7 @@ export function toTrip(item: TripResponse | TripListResponse): Trip {
     destination: getTripTypeLabel(tripType),
     period: formatPeriod(item.startDate, item.endDate),
     description: item.description || '여행 설명이 없습니다.',
-    image: fallbackTripImage,
+    image: getTripThumbnailImage(item.tripId),
     members: members.length ? members : ['나'],
     status: item.status,
     tripType: item.tripType,

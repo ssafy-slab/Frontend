@@ -34,6 +34,10 @@ describe('ExplorePage review sorting', () => {
 
   it('toggles a selected sort and returns to the normal order', async () => {
     const wrapper = mount(ExplorePage, {
+      props: {
+        accessToken: '',
+        trips: [],
+      },
       global: { stubs: { KakaoMap: true, SafeImage: true, Teleport: true } },
     })
     await flushPromises()

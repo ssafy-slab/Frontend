@@ -59,6 +59,7 @@ describe('PlaceDetailPage reviews', () => {
         place: { ...place },
         currentUser: { userId: 7, email: 'a@b.com', nickname: '여행자', role: 'USER', localAccount: true },
         accessToken: 'token',
+        trips: [],
       },
       global: {
         stubs: {

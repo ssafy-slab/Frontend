@@ -7,6 +7,7 @@ import {
   type CommunityPostSummary,
   type CommunitySort,
 } from '@/entities/community/api/communityApi'
+import { mockCommunityPosts, toMockCommunitySummary } from '@/entities/community/model/mockCommunity'
 
 const props = defineProps<{
   accessToken?: string
@@ -45,21 +46,47 @@ const selectedSortLabel = computed(() => sortOptions.find((option) => option.val
 
 let requestId = 0
 
+function getVisibleMockPosts() {
+  const keyword = query.value.trim().toLowerCase()
+  return mockCommunityPosts
+    .filter((post) => !selectedCategory.value || post.category === selectedCategory.value)
+    .filter((post) => {
+      if (!keyword) return true
+      return [post.title, post.content, post.authorNickname, post.placeName]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(keyword))
+    })
+    .map(toMockCommunitySummary)
+}
+
+function sortCommunityPosts(items: CommunityPostSummary[]) {
+  return [...items].sort((left, right) => {
+    if (selectedSort.value === 'popular') return right.likeCount - left.likeCount
+    if (selectedSort.value === 'comments') return right.commentCount - left.commentCount
+    return String(right.createdAt).localeCompare(String(left.createdAt))
+  })
+}
+
 async function loadPosts() {
   const currentRequestId = ++requestId
   loading.value = true
   errorMessage.value = ''
   try {
-    posts.value = await fetchCommunityPosts({
+    const result = await fetchCommunityPosts({
       category: selectedCategory.value || undefined,
       keyword: query.value.trim() || undefined,
       sort: selectedSort.value,
       page: 0,
       size: 30,
     }, props.accessToken)
+    if (currentRequestId === requestId) {
+      posts.value = sortCommunityPosts([...result, ...getVisibleMockPosts()])
+    }
   } catch (error) {
     if (currentRequestId === requestId) {
-      errorMessage.value = error instanceof Error ? error.message : '게시글을 불러오지 못했습니다.'
+      const fallbackPosts = getVisibleMockPosts()
+      posts.value = fallbackPosts
+      errorMessage.value = fallbackPosts.length ? '' : error instanceof Error ? error.message : '게시글을 불러오지 못했습니다.'
     }
   } finally {
     if (currentRequestId === requestId) loading.value = false

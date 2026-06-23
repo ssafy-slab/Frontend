@@ -187,7 +187,7 @@ export const posts: CommunityPost[] = [
     title: '부모님 모시고 가기 좋은 제주 3박 4일',
     author: '트래블러',
     likes: 124,
-    image: 'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=900&q=80',
+    image: 'https://images.unsplash.com/photo-1499092346589-b9b6be3e94b2?auto=format&fit=crop&w=900&q=80',
     excerpt: '많이 걷지 않아도 풍경을 즐길 수 있는 가족 여행 코스입니다.',
   },
   {

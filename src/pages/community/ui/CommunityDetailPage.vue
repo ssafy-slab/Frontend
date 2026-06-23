@@ -11,6 +11,7 @@ import {
   type CommunityComment,
   type CommunityPostDetail,
 } from '@/entities/community/api/communityApi'
+import { findMockCommunityPost, mockCommunityComments } from '@/entities/community/model/mockCommunity'
 
 const props = defineProps<{
   postId: number | null
@@ -50,6 +51,13 @@ async function loadPost() {
   loading.value = true
   errorMessage.value = ''
   try {
+    const mockPost = findMockCommunityPost(props.postId)
+    if (mockPost) {
+      post.value = mockPost
+      comments.value = mockCommunityComments[mockPost.postId] ?? []
+      return
+    }
+
     const [postResult, commentResult] = await Promise.all([
       fetchCommunityPost(props.postId, props.accessToken),
       fetchCommunityComments(props.postId, props.accessToken),
@@ -169,7 +177,7 @@ onMounted(loadPost)
 
       <div class="mt-6 space-y-6 text-base font-semibold leading-8 text-slate-700">
         <img v-if="postImageUrl" :src="postImageUrl" :alt="post.title" class="h-72 w-full rounded-xl object-cover sm:h-[420px]" />
-        <p class="whitespace-pre-line">{{ post.content || '본문이 없습니다.' }}</p>
+        <p class="whitespace-pre-line break-words [overflow-wrap:anywhere]">{{ post.content || '본문이 없습니다.' }}</p>
 
         <div v-if="post.placeName" class="flex gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <div class="grid size-10 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-500">

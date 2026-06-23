@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import AuthPage from '@/pages/auth/ui/AuthPage.vue'
 import ForgotPasswordPage from '@/pages/auth/ui/ForgotPasswordPage.vue'
@@ -21,6 +21,7 @@ import { places } from '@/entities/travel/model/travel'
 import { useAuthStore } from '@/stores/auth'
 import type { AuthUser } from '@/entities/auth/api/authApi'
 import { fetchPlace } from '@/entities/place/api/placeApi'
+import { fetchTrips } from '@/entities/travel/api/tripApi'
 import { loadViewState, replaceViewHash, saveViewState } from '@/app/lib/viewState'
 import type { ViewName } from '@/app/lib/viewState'
 import { resolveAuthenticatedView } from '@/app/lib/authRedirect'
@@ -32,6 +33,7 @@ const initialView = resolveViewChange(savedViewState.activeView ?? 'home', authS
 const activeView = ref<ViewName>(initialView)
 const selectedPlace = ref<Place | null>(savedViewState.selectedPlace ?? places[0] ?? null)
 const selectedTrip = ref<Trip | null>(savedViewState.selectedTrip ?? null)
+const appTrips = ref<Trip[]>([])
 const selectedCommunityPostId = ref<number | null>(savedViewState.selectedCommunityPostId ?? null)
 const editingCommunityPostId = ref<number | null>(savedViewState.editingCommunityPostId ?? null)
 const toastMessage = ref('')
@@ -57,6 +59,19 @@ function changeView(view: string) {
   activeView.value = next.view as ViewName
   if (next.message) showToast(next.message)
   window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+async function loadAppTrips() {
+  if (!authStore.accessToken) {
+    appTrips.value = []
+    return
+  }
+
+  try {
+    appTrips.value = await fetchTrips(authStore.accessToken)
+  } catch {
+    appTrips.value = []
+  }
 }
 
 function openPlace(place: Place) {
@@ -130,6 +145,21 @@ function handleLogout() {
   changeView('home')
 }
 
+onMounted(loadAppTrips)
+
+watch(
+  () => authStore.accessToken,
+  () => {
+    void loadAppTrips()
+  },
+)
+
+watch(activeView, (view) => {
+  if (view === 'explore' || view === 'place-detail' || view === 'schedule') {
+    void loadAppTrips()
+  }
+})
+
 </script>
 
 <template>
@@ -143,18 +173,19 @@ function handleLogout() {
   <main class="page-shell" :class="activeView === 'explore' ? 'pb-0' : 'pb-24 md:pb-0'">
     <Transition name="page-fade" mode="out-in">
       <HomePage v-if="activeView === 'home'" key="home" @change="changeView" @open-place="openPlace" />
-      <ExplorePage v-else-if="activeView === 'explore'" key="explore" @open-place="openPlace" @saved="showToast" />
+      <ExplorePage v-else-if="activeView === 'explore'" key="explore" :access-token="authStore.accessToken" :trips="appTrips" @open-place="openPlace" @saved="showToast" />
       <PlaceDetailPage
         v-else-if="activeView === 'place-detail'"
         key="place-detail"
         :place="selectedPlace"
         :current-user="currentUser"
         :access-token="authStore.accessToken"
+        :trips="appTrips"
         @change="changeView"
         @saved="showToast"
       />
       <SchedulePage v-else-if="activeView === 'schedule'" key="schedule" :current-user="currentUser" :access-token="authStore.accessToken" @open-trip="openTrip" @saved="showToast" />
-      <ScheduleDetailPage v-else-if="activeView === 'schedule-detail'" key="schedule-detail" :trip="selectedTrip" :access-token="authStore.accessToken" :current-user="currentUser" @change="changeView" @saved="showToast" />
+      <ScheduleDetailPage v-else-if="activeView === 'schedule-detail'" key="schedule-detail" :trip="selectedTrip" :access-token="authStore.accessToken" :current-user="currentUser" @change="changeView" @saved="showToast" @open-place="openPlaceById" />
       <CommunityPage
         v-else-if="activeView === 'community'"
         key="community"

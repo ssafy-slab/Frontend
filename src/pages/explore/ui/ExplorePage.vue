@@ -20,10 +20,16 @@ import {
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { fetchPlaceFilters, fetchPlaces } from '@/entities/place/api/placeApi'
 import type { PlaceCategory, RegionFilter } from '@/entities/place/api/placeApi'
-import { trips } from '@/entities/travel/model/travel'
-import type { Place } from '@/entities/travel/model/travel'
+import type { Place, Trip } from '@/entities/travel/model/travel'
+import { createTripSchedule, fetchTripSchedules, updateTripSchedule } from '@/entities/travel/api/tripApi'
+import type { TripSchedulePayload, TripScheduleResponse } from '@/entities/travel/api/tripApi'
 import KakaoMap from '@/shared/ui/KakaoMap.vue'
 import SafeImage from '@/shared/ui/SafeImage.vue'
+
+const props = defineProps<{
+  accessToken: string
+  trips: Trip[]
+}>()
 
 const pageSize = 20
 const selectedPlaceId = ref<number | null>(null)
@@ -43,6 +49,8 @@ const hasNext = ref(false)
 const isLoading = ref(false)
 const errorMessage = ref('')
 const showAddModal = ref(false)
+const isAddingToTrip = ref(false)
+const replaceCandidate = ref<TripScheduleResponse | null>(null)
 const addTarget = ref<Place | null>(null)
 const listScroller = ref<HTMLElement | null>(null)
 const loadMoreTarget = ref<HTMLElement | null>(null)
@@ -53,7 +61,7 @@ const didDragListSheet = ref(false)
 const listSheetDragStartY = ref(0)
 const listSheetDragDeltaY = ref(0)
 const addDraft = reactive({
-  tripId: String(trips[0]?.id ?? ''),
+  tripId: '',
   time: '13:00',
   memo: '',
 })
@@ -78,7 +86,7 @@ const sortOptions = [
   { value: 'reviewCount' as const, label: '리뷰 많은 순' },
   { value: 'rating' as const, label: '평점 높은 순' },
 ]
-const upcomingTrips = computed(() => trips.filter((trip) => trip.phase === 'upcoming'))
+const upcomingTrips = computed(() => props.trips.filter((trip) => trip.phase === 'upcoming'))
 const listSheetDragStyle = computed(() => {
   if (!isDraggingListSheet.value || !listSheet.value) return undefined
 
@@ -199,6 +207,7 @@ function toggleLike(place: Place) {
 
 function openAddModal(place: Place) {
   addTarget.value = place
+  addDraft.tripId ||= String(upcomingTrips.value[0]?.id ?? '')
   showAddModal.value = true
 }
 
@@ -261,13 +270,105 @@ function endListSheetDrag() {
   window.removeEventListener('pointercancel', endListSheetDrag)
 }
 
-function addToTrip() {
-  if (!addTarget.value) return
-  const trip = trips.find((item) => String(item.id) === addDraft.tripId)
-  showAddModal.value = false
-  emit('saved', `${addTarget.value.title}을(를) ${trip?.title ?? '선택한 일정'} ${addDraft.time}에 추가했습니다.`)
-  addDraft.memo = ''
+function toApiTime(time: string) {
+  return time.length === 5 ? `${time}:00` : time
 }
+
+function toTimeInput(time: string | null | undefined) {
+  return time ? time.slice(0, 5) : ''
+}
+
+function timeToMinutes(time: string) {
+  const [hours = 0, minutes = 0] = time.split(':').map(Number)
+  return hours * 60 + minutes
+}
+
+function minutesToTime(totalMinutes: number) {
+  const clampedMinutes = Math.min(totalMinutes, 23 * 60 + 59)
+  const hours = Math.floor(clampedMinutes / 60)
+  const minutes = clampedMinutes % 60
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+function getScheduleDate(trip: Trip) {
+  return trip.startDate ?? new Date().toISOString().slice(0, 10)
+}
+
+function getScheduleDayNo(trip: Trip, scheduleDate: string) {
+  if (!trip.startDate) return 1
+  const start = new Date(`${trip.startDate}T00:00:00`)
+  const target = new Date(`${scheduleDate}T00:00:00`)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(target.getTime())) return 1
+  return Math.max(1, Math.floor((target.getTime() - start.getTime()) / 86_400_000) + 1)
+}
+
+function buildPlaceSchedulePayload(trip: Trip, schedules: TripScheduleResponse[], existing?: TripScheduleResponse): TripSchedulePayload {
+  const scheduleDate = existing?.scheduleDate ?? getScheduleDate(trip)
+  const sameDateItems = schedules.filter((item) => item.scheduleDate === scheduleDate)
+
+  return {
+    placeId: addTarget.value?.id ?? null,
+    scheduleDate,
+    startTime: existing?.startTime ?? toApiTime(addDraft.time),
+    endTime: existing?.endTime ?? toApiTime(minutesToTime(timeToMinutes(addDraft.time) + 60)),
+    title: addTarget.value?.title ?? '',
+    memo: addDraft.memo.trim() || null,
+    dayNo: existing?.dayNo ?? getScheduleDayNo(trip, scheduleDate),
+    sortOrder: existing?.sortOrder ?? sameDateItems.length + 1,
+  }
+}
+
+async function addToTrip(forceReplace = false) {
+  if (!addTarget.value) return
+  if (!props.accessToken) {
+    emit('saved', '로그인이 필요합니다.')
+    return
+  }
+
+  const trip = upcomingTrips.value.find((item) => String(item.id) === addDraft.tripId)
+  if (!trip) {
+    emit('saved', '장소를 추가할 일정을 선택해주세요.')
+    return
+  }
+
+  isAddingToTrip.value = true
+  try {
+    const schedules = await fetchTripSchedules(props.accessToken, trip.id)
+    const scheduleDate = getScheduleDate(trip)
+    const conflict = replaceCandidate.value ?? schedules.find((item) => item.scheduleDate === scheduleDate && toTimeInput(item.startTime) === addDraft.time) ?? null
+
+    if (conflict && !forceReplace) {
+      replaceCandidate.value = conflict
+      return
+    }
+
+    const payload = buildPlaceSchedulePayload(trip, schedules, conflict ?? undefined)
+    if (conflict) await updateTripSchedule(props.accessToken, trip.id, conflict.scheduleItemId, payload)
+    else await createTripSchedule(props.accessToken, trip.id, payload)
+
+    showAddModal.value = false
+    replaceCandidate.value = null
+    emit('saved', `${addTarget.value.title}을(를) ${trip.title} ${addDraft.time}에 추가했습니다.`)
+    addDraft.memo = ''
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : '일정에 장소를 추가하지 못했습니다.')
+  } finally {
+    isAddingToTrip.value = false
+  }
+}
+
+function closeAddModal() {
+  showAddModal.value = false
+  replaceCandidate.value = null
+}
+
+watch(upcomingTrips, (nextTrips) => {
+  if (!addDraft.tripId && nextTrips[0]) addDraft.tripId = String(nextTrips[0].id)
+}, { immediate: true })
+
+watch(() => [addDraft.tripId, addDraft.time], () => {
+  replaceCandidate.value = null
+})
 
 watch(selectedProvinceId, () => {
   selectedDistrictId.value = ''
@@ -556,7 +657,7 @@ onBeforeUnmount(() => {
         <section class="modal-panel w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
           <div class="mb-4 flex items-center justify-between">
             <h2 class="text-xl font-black text-slate-950">일정에 장소 추가</h2>
-            <button class="text-slate-500" aria-label="닫기" @click="showAddModal = false">
+            <button class="text-slate-500" aria-label="닫기" @click="closeAddModal">
               <X :size="22" />
             </button>
           </div>
@@ -565,7 +666,7 @@ onBeforeUnmount(() => {
             <label class="block">
               <span class="mb-1.5 block text-xs font-black text-slate-950">추가할 일정</span>
               <span class="select-wrap select-wrap-full">
-                <select v-model="addDraft.tripId" class="brand-input select-control h-10 w-full rounded-lg px-3 text-sm outline-none">
+                <select v-model="addDraft.tripId" class="brand-input select-control h-10 w-full rounded-lg px-3 text-sm outline-none" :disabled="!upcomingTrips.length">
                   <option v-for="trip in upcomingTrips" :key="trip.id" :value="String(trip.id)">
                     {{ trip.title }}
                   </option>
@@ -582,9 +683,46 @@ onBeforeUnmount(() => {
               <input v-model="addDraft.memo" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="예: 점심 식사 후보" />
             </label>
           </div>
-          <button class="btn-primary mt-5 h-10 w-full rounded-lg text-sm" @click="addToTrip">
-            선택한 일정에 추가
+          <p v-if="!upcomingTrips.length" class="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs font-bold text-slate-500">
+            장소를 추가할 예정 일정이 없습니다.
+          </p>
+          <button class="btn-primary mt-5 h-10 w-full rounded-lg text-sm disabled:cursor-not-allowed disabled:opacity-50" :disabled="isAddingToTrip || !upcomingTrips.length" @click="addToTrip()">
+            {{ isAddingToTrip ? '추가 중...' : '선택한 일정에 추가' }}
           </button>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="modal-fade">
+      <div v-if="replaceCandidate" class="fixed inset-0 z-[90] grid place-items-center bg-slate-900/55 p-4">
+        <section class="modal-panel w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h2 class="text-lg font-black text-slate-950">기존 일정을 교체할까요?</h2>
+              <p class="mt-1 text-sm font-semibold leading-6 text-slate-500">
+                {{ addDraft.time }}에 이미 등록된 일정이 있습니다.
+              </p>
+            </div>
+            <button class="grid size-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-500" aria-label="닫기" @click="replaceCandidate = null">
+              <X :size="18" />
+            </button>
+          </div>
+          <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p class="text-xs font-black text-slate-500">현재 일정</p>
+            <p class="mt-1 text-sm font-black text-slate-950">{{ replaceCandidate.title }}</p>
+          </div>
+          <div class="mt-2 rounded-xl border border-brand-100 bg-brand-50 p-3">
+            <p class="text-xs font-black text-brand-600">새 장소</p>
+            <p class="mt-1 text-sm font-black text-slate-950">{{ addTarget?.title }}</p>
+          </div>
+          <div class="mt-5 grid grid-cols-2 gap-2">
+            <button class="h-10 rounded-lg bg-slate-100 text-sm font-black text-slate-700 hover:bg-slate-200" @click="replaceCandidate = null">
+              취소
+            </button>
+            <button class="h-10 rounded-lg bg-brand-500 text-sm font-black text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50" :disabled="isAddingToTrip" @click="addToTrip(true)">
+              교체하기
+            </button>
+          </div>
         </section>
       </div>
     </Transition>

@@ -50,6 +50,7 @@ const canSubmit = computed(() => form.title.trim().length > 0 && !submitting.val
 const visibleImageUrl = computed(() => imagePreviewUrl.value || existingImageUrl.value)
 
 let placeRequestId = 0
+let placeSearchTimer: number | undefined
 
 async function loadEditPost() {
   if (!props.editPostId) return
@@ -114,6 +115,9 @@ function clearImage() {
 
 async function searchPlaces() {
   const keyword = placeQuery.value.trim()
+  if (selectedPlace.value && keyword !== selectedPlace.value.title) {
+    selectedPlace.value = null
+  }
   if (keyword.length < 2) {
     placeResults.value = []
     return
@@ -122,7 +126,7 @@ async function searchPlaces() {
   const currentRequestId = ++placeRequestId
   searchingPlaces.value = true
   try {
-    const result = await fetchPlaces({ keyword, page: 0, size: 5 })
+    const result = await fetchPlaces({ keyword, page: 0, size: 8 })
     if (currentRequestId === placeRequestId) {
       placeResults.value = result.content
     }
@@ -180,11 +184,15 @@ async function submitPost() {
 }
 
 watch(placeQuery, () => {
-  window.setTimeout(searchPlaces, 250)
+  if (placeSearchTimer) window.clearTimeout(placeSearchTimer)
+  placeSearchTimer = window.setTimeout(searchPlaces, 250)
 })
 
 onMounted(loadEditPost)
-onBeforeUnmount(clearImagePreview)
+onBeforeUnmount(() => {
+  if (placeSearchTimer) window.clearTimeout(placeSearchTimer)
+  clearImagePreview()
+})
 </script>
 
 <template>

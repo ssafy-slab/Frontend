@@ -11,6 +11,7 @@ import {
   fetchTripSchedules,
   fetchTripMembers,
   fetchTrips,
+  tripThumbnailImages,
   joinTrip,
   updateTripSchedule,
   updateTripMemberRole,
@@ -57,11 +58,13 @@ describe('tripApi', () => {
       title: 'Busan trip',
       destination: '팀 여행',
       period: '2026-07-01 - 2026-07-03',
-      members: ['ow', 'fr'],
+      members: ['o', 'f'],
       tripType: 'TEAM',
       ownerUserId: 3,
       phase: 'upcoming',
     })
+    expect(tripThumbnailImages).toHaveLength(6)
+    expect(tripThumbnailImages).toContain(trips[0]?.image)
   })
 
   it('sends documented trip mutation requests', async () => {

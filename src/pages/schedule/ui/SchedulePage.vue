@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Link, MoreHorizontal, Plane, Plus, Trash2, X } from 'lucide-vue-next'
 import type { Trip } from '@/entities/travel/model/travel'
-import { createTrip as createTripApi, deleteTrip as deleteTripApi, fetchTrips, joinTrip as joinTripApi } from '@/entities/travel/api/tripApi'
+import { createTrip as createTripApi, deleteTrip as deleteTripApi, fetchTrips, getTripThumbnailImage, joinTrip as joinTripApi } from '@/entities/travel/api/tripApi'
 import { getTripTypeLabel } from '@/entities/travel/model/tripAccess'
 
 type User = {
@@ -87,8 +87,8 @@ async function createTrip() {
           destination: getTripTypeLabel(draft.tripType),
           period: `${draft.start || '시작일'} - ${draft.end || '종료일'}`,
           description: payload.description,
-          image: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80',
-          members: [props.currentUser?.nickname.slice(0, 2) || '나'],
+          image: getTripThumbnailImage(),
+          members: [props.currentUser?.nickname.slice(0, 1) || '나'],
           status: 'AI가 일정 조율 중',
           tripType: draft.tripType,
           startDate: draft.start || null,
@@ -209,7 +209,7 @@ watch(() => props.accessToken, loadTrips)
         @click="!manageMode && emit('openTrip', trip)"
       >
         <div class="relative h-28 bg-slate-200 sm:h-auto">
-          <img :src="trip.image" :alt="trip.title" class="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+          <img :src="trip.image" :alt="trip.title" class="h-full w-full object-cover" />
           <span v-if="trip.dday" class="absolute left-2.5 top-2.5 rounded-full bg-brand-500 px-2.5 py-1 text-[11px] font-black text-white">
             {{ trip.dday }}
           </span>
