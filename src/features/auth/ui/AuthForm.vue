@@ -85,7 +85,7 @@ async function submit() {
   }
 }
 
-function startOAuthLogin(provider: 'kakao' | 'google' | 'naver') {
+function startOAuthLogin(provider: 'kakao' | 'google') {
   authStore.startOAuthLogin(provider)
 }
 </script>
@@ -174,16 +174,6 @@ function startOAuthLogin(provider: 'kakao' | 'google' | 'naver') {
           />
         </svg>
         카카오 로그인
-      </button>
-      <button
-        type="button"
-        class="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#03c75a] text-sm font-black text-white"
-        @click="startOAuthLogin('naver')"
-      >
-        <svg class="size-5 shrink-0" viewBox="0 0 32 32" aria-hidden="true">
-          <path fill="#fff" d="M19 16.7 12.6 7.5H7.2v17h5.8v-9.2l6.4 9.2h5.4v-17H19v9.2Z" />
-        </svg>
-        네이버 로그인
       </button>
       <button
         type="button"

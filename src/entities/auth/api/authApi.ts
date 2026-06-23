@@ -33,7 +33,7 @@ export type PasswordResetPayload = {
   newPassword: string
 }
 
-export type OAuthProvider = 'kakao' | 'google' | 'naver'
+export type OAuthProvider = 'kakao' | 'google'
 
 async function requestAuth(path: string, body: LoginPayload | SignupPayload): Promise<AuthResponse> {
   const response = await fetch(new URL(path, apiBaseUrl), {
