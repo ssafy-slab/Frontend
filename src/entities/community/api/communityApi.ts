@@ -41,15 +41,22 @@ export type CommunityComment = {
   commenterUserId: number
   authorNickname: string
   parentCommentId: number | null
+  replyToNickname: string | null
   content: string
   createdAt: string
   updatedAt: string
   mine: boolean
+  deleted: boolean
+  edited: boolean
 }
 
 export type CommunityCommentPayload = {
   content: string
   parentCommentId?: number | null
+}
+
+export type CommunityCommentUpdatePayload = {
+  content: string
 }
 
 export type CommunityPostSearchParams = {
@@ -89,6 +96,20 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
   if (!response.ok) {
     if (response.status === 401) throw new Error('로그인이 필요합니다.')
+    if (response.status === 403 && url.includes('/community/comments/')) {
+      throw new Error('댓글 작성자만 수정하거나 삭제할 수 있습니다.')
+    }
+    if (
+      response.status === 404
+      && url.includes('/community/posts/')
+      && url.endsWith('/comments')
+      && init?.method === 'POST'
+    ) {
+      throw new Error('답변할 댓글이 삭제되었습니다.')
+    }
+    if (response.status === 404 && url.includes('/community/comments/')) {
+      throw new Error('댓글을 찾을 수 없거나 이미 삭제되었습니다.')
+    }
     if (response.status === 403) throw new Error('권한이 없습니다.')
     if (response.status === 404) throw new Error('요청한 항목을 찾을 수 없습니다.')
     throw new Error(`커뮤니티 요청에 실패했습니다. (${response.status})`)
@@ -177,4 +198,25 @@ export function createCommunityComment(postId: number, token: string, payload: C
     headers: authHeaders(token, true),
     body: JSON.stringify(payload),
   })
+}
+
+export function updateCommunityComment(commentId: number, token: string, payload: CommunityCommentUpdatePayload) {
+  return requestJson<CommunityComment[]>(buildUrl(`/api/community/comments/${commentId}`), {
+    method: 'PUT',
+    headers: authHeaders(token, true),
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function deleteCommunityComment(commentId: number, token: string) {
+  const response = await fetch(buildUrl(`/api/community/comments/${commentId}`), {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('로그인이 필요합니다.')
+    if (response.status === 403) throw new Error('댓글 작성자만 수정하거나 삭제할 수 있습니다.')
+    if (response.status === 404) throw new Error('댓글을 찾을 수 없거나 이미 삭제되었습니다.')
+    throw new Error(`댓글 삭제에 실패했습니다. (${response.status})`)
+  }
 }

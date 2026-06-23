@@ -3,15 +3,18 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ArrowLeft, Edit3, Heart, MessageCircle, MapPin, Send, Trash2, User } from 'lucide-vue-next'
 import {
   createCommunityComment,
+  deleteCommunityComment,
   deleteCommunityPost,
   fetchCommunityComments,
   fetchCommunityPost,
   resolveCommunityImageUrl,
   toggleCommunityPostLike,
+  updateCommunityComment,
   type CommunityComment,
   type CommunityPostDetail,
 } from '@/entities/community/api/communityApi'
 import { findMockCommunityPost, mockCommunityComments } from '@/entities/community/model/mockCommunity'
+import { flattenCommunityComments } from '@/entities/community/model/commentTree'
 
 const props = defineProps<{
   postId: number | null
@@ -38,10 +41,31 @@ const commentDraft = ref('')
 const loading = ref(false)
 const deleting = ref(false)
 const submittingComment = ref(false)
+const submittingReply = ref(false)
+const savingComment = ref(false)
+const replyTargetId = ref<number | null>(null)
+const replyDraft = ref('')
+const editingCommentId = ref<number | null>(null)
+const editCommentDraft = ref('')
 const errorMessage = ref('')
 
 const categoryLabel = computed(() => post.value ? categoryLabels[post.value.category] ?? post.value.category : '')
 const postImageUrl = computed(() => post.value?.imageUrl ? resolveCommunityImageUrl(post.value.imageUrl) : '')
+const displayComments = computed(() => flattenCommunityComments(comments.value))
+
+function syncCommentCount() {
+  if (!post.value) return
+  post.value = {
+    ...post.value,
+    commentCount: comments.value.length,
+  }
+}
+
+async function reloadComments() {
+  if (!post.value) return
+  comments.value = await fetchCommunityComments(post.value.postId, props.accessToken)
+  syncCommentCount()
+}
 
 async function loadPost() {
   if (!props.postId) {
@@ -125,16 +149,92 @@ async function submitComment() {
   try {
     comments.value = await createCommunityComment(post.value.postId, props.accessToken, {
       content: commentDraft.value.trim(),
+      parentCommentId: null,
     })
-    post.value = {
-      ...post.value,
-      commentCount: comments.value.length,
-    }
+    syncCommentCount()
     commentDraft.value = ''
   } catch (error) {
     emit('saved', error instanceof Error ? error.message : '댓글 등록에 실패했습니다.')
   } finally {
     submittingComment.value = false
+  }
+}
+
+function openReply(comment: CommunityComment) {
+  if (!props.accessToken) {
+    emit('saved', '로그인 후 답글을 작성할 수 있습니다.')
+    emit('change', 'login')
+    return
+  }
+  replyTargetId.value = comment.commentId
+  replyDraft.value = ''
+  editingCommentId.value = null
+}
+
+function cancelReply() {
+  replyTargetId.value = null
+  replyDraft.value = ''
+}
+
+async function submitReply(comment: CommunityComment) {
+  if (!post.value || !props.accessToken || !replyDraft.value.trim()) return
+  submittingReply.value = true
+  try {
+    comments.value = await createCommunityComment(post.value.postId, props.accessToken, {
+      content: replyDraft.value.trim(),
+      parentCommentId: comment.commentId,
+    })
+    syncCommentCount()
+    cancelReply()
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : '답글 등록에 실패했습니다.')
+    if (error instanceof Error && error.message.includes('찾을 수 없습니다')) {
+      await reloadComments()
+    }
+  } finally {
+    submittingReply.value = false
+  }
+}
+
+function openCommentEdit(comment: CommunityComment) {
+  editingCommentId.value = comment.commentId
+  editCommentDraft.value = comment.content
+  cancelReply()
+}
+
+function cancelCommentEdit() {
+  editingCommentId.value = null
+  editCommentDraft.value = ''
+}
+
+async function saveCommentEdit(comment: CommunityComment) {
+  if (!props.accessToken || !editCommentDraft.value.trim()) return
+  savingComment.value = true
+  try {
+    comments.value = await updateCommunityComment(comment.commentId, props.accessToken, {
+      content: editCommentDraft.value.trim(),
+    })
+    syncCommentCount()
+    cancelCommentEdit()
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : '댓글 수정에 실패했습니다.')
+  } finally {
+    savingComment.value = false
+  }
+}
+
+async function removeComment(comment: CommunityComment) {
+  if (!props.accessToken || !window.confirm('댓글을 삭제할까요?')) return
+  savingComment.value = true
+  try {
+    await deleteCommunityComment(comment.commentId, props.accessToken)
+    await reloadComments()
+    cancelCommentEdit()
+    cancelReply()
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : '댓글 삭제에 실패했습니다.')
+  } finally {
+    savingComment.value = false
   }
 }
 
@@ -215,16 +315,101 @@ onMounted(loadPost)
           </button>
         </div>
         <div class="space-y-4">
-          <div v-for="comment in comments" :key="comment.commentId" class="flex gap-3" :class="comment.parentCommentId ? 'ml-8 sm:ml-12' : ''">
+          <div
+            v-for="comment in displayComments"
+            :key="comment.commentId"
+            :data-testid="`comment-${comment.commentId}`"
+            class="flex gap-3"
+            :class="comment.isReply ? 'ml-8' : ''"
+          >
             <span class="grid size-9 place-items-center rounded-full bg-slate-200 text-sm font-black text-slate-600">
               {{ comment.authorNickname.slice(0, 1) }}
             </span>
-            <div class="flex-1 rounded-lg bg-slate-100 p-4" :class="comment.mine ? 'border-2 border-brand-500 bg-white' : ''">
-              <div class="mb-2 flex justify-between text-sm font-bold text-slate-500">
-                <strong class="text-slate-950">{{ comment.authorNickname }}</strong>
-                <span>{{ new Date(comment.createdAt).toLocaleString() }}</span>
+            <div
+              class="min-w-0 flex-1 rounded-lg bg-slate-100 p-4"
+              :class="[
+                comment.mine ? 'border-2 border-brand-500 bg-white' : '',
+                comment.deleted ? 'bg-slate-50 text-slate-400' : '',
+              ]"
+            >
+              <div class="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm font-bold text-slate-500">
+                <strong :class="comment.deleted ? 'text-slate-400' : 'text-slate-950'">{{ comment.authorNickname }}</strong>
+                <span>
+                  {{ new Date(comment.createdAt).toLocaleString() }}
+                  <small v-if="comment.edited" class="ml-1 text-slate-400">수정됨</small>
+                </span>
               </div>
-              <p class="whitespace-pre-line text-sm text-slate-700">{{ comment.content }}</p>
+              <template v-if="editingCommentId === comment.commentId">
+                <textarea
+                  v-model="editCommentDraft"
+                  :data-testid="`edit-comment-input-${comment.commentId}`"
+                  class="brand-input min-h-24 w-full rounded-lg px-3 py-2 text-sm outline-none"
+                />
+                <div class="mt-2 flex justify-end gap-2">
+                  <button class="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-black text-slate-600" @click="cancelCommentEdit">취소</button>
+                  <button
+                    :data-testid="`save-comment-edit-${comment.commentId}`"
+                    class="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-black text-white disabled:opacity-50"
+                    :disabled="savingComment || !editCommentDraft.trim()"
+                    @click="saveCommentEdit(comment)"
+                  >
+                    저장
+                  </button>
+                </div>
+              </template>
+              <template v-else>
+                <p class="whitespace-pre-line break-words text-sm" :class="comment.deleted ? 'italic text-slate-400' : 'text-slate-700'">
+                  <strong v-if="comment.replyToNickname" class="mr-1 font-black text-brand-500">@{{ comment.replyToNickname }}</strong>
+                  {{ comment.content }}
+                </p>
+                <div v-if="!comment.deleted" class="mt-3 flex flex-wrap gap-3 text-xs font-black">
+                  <button
+                    :data-testid="`reply-comment-${comment.commentId}`"
+                    class="text-brand-500 hover:text-brand-600"
+                    @click="openReply(comment)"
+                  >
+                    답글
+                  </button>
+                  <button
+                    v-if="comment.mine"
+                    :data-testid="`edit-comment-${comment.commentId}`"
+                    class="text-slate-500 hover:text-slate-700"
+                    @click="openCommentEdit(comment)"
+                  >
+                    수정
+                  </button>
+                  <button
+                    v-if="comment.mine"
+                    :data-testid="`delete-comment-${comment.commentId}`"
+                    class="text-red-500 hover:text-red-600"
+                    :disabled="savingComment"
+                    @click="removeComment(comment)"
+                  >
+                    삭제
+                  </button>
+                </div>
+              </template>
+              <div v-if="replyTargetId === comment.commentId" class="mt-3 rounded-lg border border-brand-100 bg-white p-3">
+                <p class="mb-2 text-xs font-black text-brand-500">@{{ comment.authorNickname }}에게 답글</p>
+                <div class="flex gap-2">
+                  <input
+                    v-model="replyDraft"
+                    :data-testid="`reply-input-${comment.commentId}`"
+                    class="brand-input h-10 min-w-0 flex-1 rounded-lg px-3 text-sm outline-none"
+                    placeholder="답글을 입력하세요"
+                    @keyup.enter="submitReply(comment)"
+                  />
+                  <button class="rounded-lg bg-slate-100 px-3 text-xs font-black text-slate-600" @click="cancelReply">취소</button>
+                  <button
+                    :data-testid="`submit-reply-${comment.commentId}`"
+                    class="rounded-lg bg-brand-500 px-3 text-xs font-black text-white disabled:opacity-50"
+                    :disabled="submittingReply || !replyDraft.trim()"
+                    @click="submitReply(comment)"
+                  >
+                    등록
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
