@@ -85,6 +85,7 @@ const pendingChatMessages = ref<string[]>([])
 const chatLoadRequestId = ref(0)
 const deleteScheduleTarget = ref<ScheduleItem | null>(null)
 const editingSchedule = ref<ScheduleItem | null>(null)
+const scheduleReplaceTarget = ref<ScheduleItem | null>(null)
 const selectedScheduleItemId = ref<number | null>(null)
 const canInviteMembers = computed(() => canInviteTripMembers(props.trip))
 const canManageTripMembers = computed(() => canInviteMembers.value && props.currentUser?.userId === props.trip?.ownerUserId)
@@ -206,6 +207,14 @@ function ensureValidEndTime() {
 
 function getDefaultScheduleDate() {
   return props.trip?.startDate ?? new Date().toISOString().slice(0, 10)
+}
+
+function getScheduleDayNo(scheduleDate: string) {
+  if (!props.trip?.startDate) return 1
+  const start = new Date(`${props.trip.startDate}T00:00:00`)
+  const target = new Date(`${scheduleDate}T00:00:00`)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(target.getTime())) return 1
+  return Math.max(1, Math.floor((target.getTime() - start.getTime()) / 86_400_000) + 1)
 }
 
 function toScheduleItem(item: TripScheduleResponse): ScheduleItem {
@@ -336,11 +345,24 @@ function openFlowPlaceDetail(item: ScheduleItem) {
   emit('openPlace', item.placeId)
 }
 
-function buildSchedulePayload(): TripSchedulePayload {
+function findScheduleTimeConflict() {
+  const editingItem = editingSchedule.value
+  if (!editingItem) return null
+  return scheduleItems.value.find((item) =>
+    item.id !== editingItem.id
+    && item.date === scheduleDraft.date
+    && item.time === scheduleDraft.startTime,
+  ) ?? null
+}
+
+function buildSchedulePayload(replaceTarget?: ScheduleItem | null): TripSchedulePayload {
   ensureValidEndTime()
   const sameDateItems = scheduleItems.value.filter((item) => item.date === scheduleDraft.date)
   const editingSortOrder = editingSchedule.value
     ? sameDateItems.findIndex((item) => item.id === editingSchedule.value?.id) + 1
+    : 0
+  const replaceSortOrder = replaceTarget
+    ? sameDateItems.findIndex((item) => item.id === replaceTarget.id) + 1
     : 0
 
   return {
@@ -350,12 +372,12 @@ function buildSchedulePayload(): TripSchedulePayload {
     endTime: scheduleDraft.endTime ? toApiTime(scheduleDraft.endTime) : null,
     title: scheduleDraft.title.trim(),
     memo: scheduleDraft.memo.trim() || null,
-    dayNo: Math.max(1, sameDateItems.findIndex((item) => item.date === scheduleDraft.date) + 1),
-    sortOrder: editingSortOrder > 0 ? editingSortOrder : sameDateItems.length + 1,
+    dayNo: getScheduleDayNo(scheduleDraft.date),
+    sortOrder: replaceSortOrder > 0 ? replaceSortOrder : editingSortOrder > 0 ? editingSortOrder : sameDateItems.length + 1,
   }
 }
 
-async function saveScheduleItem() {
+async function saveScheduleItem(forceReplace = false) {
   if (!scheduleDraft.title.trim() || !scheduleDraft.date || !scheduleDraft.startTime) return
   if (!props.accessToken || !props.trip?.id) {
     emit('saved', '로그인이 필요합니다.')
@@ -364,17 +386,33 @@ async function saveScheduleItem() {
 
   isSaving.value = true
   try {
-    const payload = buildSchedulePayload()
     const editingItem = editingSchedule.value
+    const conflict = scheduleReplaceTarget.value ?? findScheduleTimeConflict()
+
+    if (editingItem && conflict && !forceReplace) {
+      scheduleReplaceTarget.value = conflict
+      return
+    }
+    if (editingItem && conflict && forceReplace) {
+      scheduleReplaceTarget.value = null
+    }
+
+    const payload = buildSchedulePayload(conflict)
+    if (editingItem && conflict && forceReplace) {
+      await deleteScheduleItem(props.accessToken, props.trip.id, conflict.scheduleItemId ?? conflict.id)
+    }
     const saved = editingItem?.scheduleItemId
       ? await updateTripSchedule(props.accessToken, props.trip.id, editingItem.scheduleItemId, payload)
       : await createTripSchedule(props.accessToken, props.trip.id, payload)
     const nextItem = toScheduleItem(saved)
     scheduleItems.value = sortScheduleItems(editingItem
-      ? scheduleItems.value.map((item) => (item.id === nextItem.id ? nextItem : item))
+      ? scheduleItems.value
+        .filter((item) => item.id !== conflict?.id)
+        .map((item) => (item.id === nextItem.id ? nextItem : item))
       : [...scheduleItems.value, nextItem])
     showScheduleModal.value = false
     editingSchedule.value = null
+    scheduleReplaceTarget.value = null
     emit('saved', editingItem ? '일정이 수정되었습니다.' : '일정이 추가되었습니다.')
   } catch (error) {
     emit('saved', error instanceof Error ? error.message : '일정을 저장하지 못했습니다.')
@@ -1219,10 +1257,70 @@ onBeforeUnmount(closeChatSocket)
             data-testid="save-schedule-button"
             class="btn-primary mt-5 h-10 w-full rounded-lg text-sm disabled:cursor-not-allowed disabled:opacity-60"
             :disabled="isSaving || !scheduleDraft.title.trim() || !scheduleDraft.date || !scheduleDraft.startTime"
-            @click="saveScheduleItem"
+            @click="saveScheduleItem()"
           >
             {{ isSaving ? '저장 중' : '저장하기' }}
           </button>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="modal-fade">
+      <div v-if="scheduleReplaceTarget" class="fixed inset-0 z-[90] grid place-items-center bg-slate-900/55 p-4">
+        <section data-testid="replace-schedule-modal" class="modal-panel w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <p class="text-[10px] font-black uppercase tracking-[0.18em] text-brand-500">Schedule change</p>
+              <h2 class="mt-1 text-lg font-black text-slate-950">같은 시간의 일정을 변경할까요?</h2>
+              <p class="mt-1 text-sm font-semibold leading-6 text-slate-500">
+                {{ scheduleDraft.startTime }}에 이미 등록된 일정이 있습니다. 기존 일정을 현재 수정 중인 일정으로 변경할 수 있습니다.
+              </p>
+            </div>
+            <button class="grid size-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-500" aria-label="닫기" @click="scheduleReplaceTarget = null">
+              <X :size="18" />
+            </button>
+          </div>
+
+          <div class="mt-5 space-y-3">
+            <div class="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+              <span class="absolute -left-2 top-1/2 size-4 -translate-y-1/2 rounded-full border border-slate-200 bg-white" />
+              <span class="absolute -right-2 top-1/2 size-4 -translate-y-1/2 rounded-full border border-slate-200 bg-white" />
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Current schedule</p>
+                  <p class="mt-1 truncate text-base font-black text-slate-950">{{ scheduleReplaceTarget.title }}</p>
+                </div>
+                <span class="rounded-full bg-slate-800 px-3 py-1.5 text-xs font-black text-white">{{ scheduleReplaceTarget.time }}</span>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3 px-3 text-brand-400" aria-hidden="true">
+              <span class="h-px flex-1 border-t border-dashed border-brand-200" />
+              <span class="grid size-7 place-items-center rounded-full bg-brand-50 text-sm font-black">↔</span>
+              <span class="h-px flex-1 border-t border-dashed border-brand-200" />
+            </div>
+
+            <div class="relative overflow-hidden rounded-2xl border border-brand-200 bg-brand-50 px-5 py-4 shadow-sm shadow-indigo-100">
+              <span class="absolute -left-2 top-1/2 size-4 -translate-y-1/2 rounded-full border border-brand-200 bg-white" />
+              <span class="absolute -right-2 top-1/2 size-4 -translate-y-1/2 rounded-full border border-brand-200 bg-white" />
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="text-[10px] font-black uppercase tracking-[0.16em] text-brand-500">Edited schedule</p>
+                  <p class="mt-1 truncate text-base font-black text-slate-950">{{ scheduleDraft.title }}</p>
+                </div>
+                <span class="rounded-full bg-brand-500 px-3 py-1.5 text-xs font-black text-white">{{ scheduleDraft.startTime }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-5 grid grid-cols-2 gap-2">
+            <button data-testid="keep-existing-schedule-time" class="h-10 rounded-lg bg-slate-100 text-sm font-black text-slate-700 hover:bg-slate-200" @click="scheduleReplaceTarget = null">
+              기존 일정 유지
+            </button>
+            <button data-testid="confirm-replace-schedule" class="h-10 rounded-lg bg-brand-500 text-sm font-black text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50" :disabled="isSaving" @click="saveScheduleItem(true)">
+              변경하기
+            </button>
+          </div>
         </section>
       </div>
     </Transition>
@@ -1334,10 +1432,11 @@ onBeforeUnmount(closeChatSocket)
                           <button
                             v-if="item.placeId"
                             data-testid="open-flow-place-detail"
-                            class="mt-3 inline-flex h-8 items-center gap-1 rounded-lg bg-white px-2.5 text-[11px] font-black text-brand-500 ring-1 ring-brand-100 transition hover:bg-brand-50"
+                            class="mt-2 inline-flex items-center gap-1 text-xs !font-semibold text-slate-400 underline-offset-4 transition hover:text-brand-500 hover:underline"
+                            style="font-size: 12px; line-height: 16px;"
                             @click="openFlowPlaceDetail(item)"
                           >
-                            여행지 상세 보기
+                            여행지 상세 보기 →
                           </button>
                         </div>
                         <button

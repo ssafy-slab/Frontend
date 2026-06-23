@@ -178,4 +178,74 @@ describe('ExplorePage review sorting', () => {
     )
     expect(createTripSchedule).not.toHaveBeenCalled()
   })
+
+  it('adds a place to the selected trip date from the explore modal', async () => {
+    fetchPlaces.mockResolvedValue({
+      content: [{
+        id: 1,
+        title: '성심당',
+        location: '대전광역시 중구',
+        category: '음식점',
+        rawCategory: '음식점',
+        description: '대전 빵집',
+        image: '/images/default-place.svg',
+        thumbnailImage: '/images/default-place.svg',
+        detailImage: '/images/default-place.svg',
+        rating: 0,
+        reviewCount: '0',
+        tags: [],
+        marker: { top: '50%', left: '50%' },
+        coordinates: { lat: 36.32, lng: 127.42 },
+        address: '대전광역시 중구',
+        regionId: 1,
+        regionName: '중구',
+        regionFullName: '대전광역시 중구',
+      }],
+      totalElements: 1,
+      page: 0,
+      size: 20,
+      hasNext: false,
+    })
+    fetchTripSchedules.mockResolvedValue([])
+    createTripSchedule.mockResolvedValue({})
+
+    const wrapper = mount(ExplorePage, {
+      props: {
+        accessToken: 'token',
+        trips: [{
+          id: 10,
+          title: '대전 여행',
+          destination: '팀 여행',
+          period: '2026-07-01 - 2026-07-03',
+          description: '',
+          image: '',
+          members: ['나'],
+          status: 'PLANNING',
+          tripType: 'TEAM',
+          startDate: '2026-07-01',
+          endDate: '2026-07-03',
+          phase: 'upcoming',
+        }],
+      },
+      global: { stubs: { KakaoMap: true, SafeImage: true, Teleport: true } },
+    })
+    await flushPromises()
+
+    await wrapper.get('article').trigger('click')
+    await wrapper.get('[data-testid="open-add-place-1"]').trigger('click')
+    expect(wrapper.get('[data-testid="add-place-date"]').element).toHaveProperty('value', '2026-07-01')
+    await wrapper.get('[data-testid="add-place-date"]').setValue('2026-07-02')
+    await wrapper.get('[data-testid="add-place-start-time"]').setValue('14:30')
+    await wrapper.get('[data-testid="add-place-end-time"]').setValue('16:00')
+    await wrapper.get('[data-testid="confirm-add-place"]').trigger('click')
+    await flushPromises()
+
+    expect(createTripSchedule).toHaveBeenCalledWith('token', 10, expect.objectContaining({
+      placeId: 1,
+      scheduleDate: '2026-07-02',
+      startTime: '14:30:00',
+      endTime: '16:00:00',
+      dayNo: 2,
+    }))
+  })
 })

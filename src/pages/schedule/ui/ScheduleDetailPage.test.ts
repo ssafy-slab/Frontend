@@ -29,6 +29,7 @@ const {
   createChecklistItem,
   createTripSchedule,
   deleteChecklistItem,
+  deleteScheduleItem,
   fetchChecklistItems,
   fetchTripMembers,
   fetchTripSchedules,
@@ -38,6 +39,7 @@ const {
   createChecklistItem: vi.fn(),
   createTripSchedule: vi.fn(),
   deleteChecklistItem: vi.fn(),
+  deleteScheduleItem: vi.fn(),
   fetchChecklistItems: vi.fn(),
   fetchTripMembers: vi.fn(),
   fetchTripSchedules: vi.fn(),
@@ -75,6 +77,7 @@ vi.mock('@/entities/travel/api/tripApi', async (importOriginal) => {
     createChecklistItem,
     createTripSchedule,
     deleteChecklistItem,
+    deleteScheduleItem,
     fetchChecklistItems,
     fetchTripMembers,
     fetchTripSchedules,
@@ -891,6 +894,33 @@ describe('ScheduleDetailPage collaboration controls', () => {
     }))
   })
 
+  it('uses the trip date range to calculate the schedule day number', async () => {
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-schedule-form"]').trigger('click')
+    await wrapper.get('[data-testid="schedule-title-input"]').setValue('Second day cafe')
+    await wrapper.get('[data-testid="schedule-date-input"]').setValue('2026-07-02')
+    await wrapper.get('[data-testid="schedule-start-input"]').setValue('09:00')
+    await wrapper.get('[data-testid="save-schedule-button"]').trigger('click')
+    await flushPromises()
+
+    expect(createTripSchedule).toHaveBeenCalledWith('token', 1, expect.objectContaining({
+      scheduleDate: '2026-07-02',
+      dayNo: 2,
+    }))
+  })
+
   it('clears the selected place when the place search text changes after selection', async () => {
     const wrapper = mount(ScheduleDetailPage, {
       props: {
@@ -954,6 +984,95 @@ describe('ScheduleDetailPage collaboration controls', () => {
       memo: '카페 근처',
     }))
     expect(wrapper.text()).toContain('17:00 수정된 자유시간')
+  })
+
+  it('asks before replacing another schedule when an edited start time conflicts', async () => {
+    fetchTripSchedules.mockResolvedValue([
+      {
+        scheduleItemId: 99,
+        tripId: 1,
+        placeId: null,
+        createdByUserId: 10,
+        dayNo: 1,
+        scheduleDate: '2026-07-01',
+        startTime: '15:00:00',
+        endTime: '16:00:00',
+        title: 'Original schedule',
+        memo: '',
+        sortOrder: 1,
+        createdAt: '2026-06-23T10:00:00',
+        updatedAt: '2026-06-23T10:00:00',
+      },
+      {
+        scheduleItemId: 120,
+        tripId: 1,
+        placeId: null,
+        createdByUserId: 10,
+        dayNo: 1,
+        scheduleDate: '2026-07-01',
+        startTime: '17:00:00',
+        endTime: '18:00:00',
+        title: 'Conflicting schedule',
+        memo: '',
+        sortOrder: 2,
+        createdAt: '2026-06-23T10:00:00',
+        updatedAt: '2026-06-23T10:00:00',
+      },
+    ])
+    updateTripSchedule.mockResolvedValue({
+      scheduleItemId: 99,
+      tripId: 1,
+      placeId: null,
+      createdByUserId: 10,
+      dayNo: 1,
+      scheduleDate: '2026-07-01',
+      startTime: '17:00:00',
+      endTime: '18:00:00',
+      title: 'Moved schedule',
+      memo: '',
+      sortOrder: 2,
+      createdAt: '2026-06-23T10:00:00',
+      updatedAt: '2026-06-23T11:10:00',
+    })
+    deleteScheduleItem.mockResolvedValue(undefined)
+
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="edit-schedule-99"]').trigger('click')
+    await wrapper.get('[data-testid="schedule-title-input"]').setValue('Moved schedule')
+    await wrapper.get('[data-testid="schedule-start-input"]').setValue('17:00')
+    await wrapper.get('[data-testid="schedule-end-input"]').setValue('18:00')
+    await wrapper.get('[data-testid="save-schedule-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="replace-schedule-modal"]').text()).toContain('Conflicting schedule')
+    expect(updateTripSchedule).not.toHaveBeenCalled()
+
+    await wrapper.get('[data-testid="confirm-replace-schedule"]').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(updateTripSchedule).toHaveBeenCalledWith('token', 1, 99, expect.objectContaining({
+      startTime: '17:00:00',
+      endTime: '18:00:00',
+      title: 'Moved schedule',
+      sortOrder: 2,
+    }))
+    expect(deleteScheduleItem).toHaveBeenCalledWith('token', 1, 120)
+    expect(deleteScheduleItem.mock.invocationCallOrder[0]!).toBeLessThan(updateTripSchedule.mock.invocationCallOrder[0]!)
+    expect(wrapper.text()).toContain('17:00 Moved schedule')
+    expect(wrapper.find('[data-testid="schedule-card-120"]').exists()).toBe(false)
   })
 
   it('loads checklist items for the trip', async () => {

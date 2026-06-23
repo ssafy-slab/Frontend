@@ -62,7 +62,9 @@ const listSheetDragStartY = ref(0)
 const listSheetDragDeltaY = ref(0)
 const addDraft = reactive({
   tripId: '',
+  date: '',
   time: '13:00',
+  endTime: '14:00',
   memo: '',
 })
 
@@ -209,6 +211,8 @@ function toggleLike(place: Place) {
 function openAddModal(place: Place) {
   addTarget.value = place
   addDraft.tripId ||= String(upcomingTrips.value[0]?.id ?? '')
+  const trip = upcomingTrips.value.find((item) => String(item.id) === addDraft.tripId)
+  addDraft.date = trip ? getScheduleDate(trip) : new Date().toISOString().slice(0, 10)
   showAddModal.value = true
 }
 
@@ -291,8 +295,19 @@ function minutesToTime(totalMinutes: number) {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
 }
 
+function ensureValidAddEndTime() {
+  if (!addDraft.time) return
+  if (!addDraft.endTime || timeToMinutes(addDraft.endTime) <= timeToMinutes(addDraft.time)) {
+    addDraft.endTime = minutesToTime(timeToMinutes(addDraft.time) + 60)
+  }
+}
+
 function getScheduleDate(trip: Trip) {
   return trip.startDate ?? new Date().toISOString().slice(0, 10)
+}
+
+function getSelectedScheduleDate(trip: Trip) {
+  return addDraft.date || getScheduleDate(trip)
 }
 
 function getScheduleDayNo(trip: Trip, scheduleDate: string) {
@@ -304,14 +319,14 @@ function getScheduleDayNo(trip: Trip, scheduleDate: string) {
 }
 
 function buildPlaceSchedulePayload(trip: Trip, schedules: TripScheduleResponse[], existing?: TripScheduleResponse): TripSchedulePayload {
-  const scheduleDate = existing?.scheduleDate ?? getScheduleDate(trip)
+  const scheduleDate = existing?.scheduleDate ?? getSelectedScheduleDate(trip)
   const sameDateItems = schedules.filter((item) => item.scheduleDate === scheduleDate)
 
   return {
     placeId: addTarget.value?.id ?? null,
     scheduleDate,
     startTime: existing?.startTime ?? toApiTime(addDraft.time),
-    endTime: existing?.endTime ?? toApiTime(minutesToTime(timeToMinutes(addDraft.time) + 60)),
+    endTime: existing?.endTime ?? toApiTime(addDraft.endTime),
     title: addTarget.value?.title ?? '',
     memo: addDraft.memo.trim() || null,
     dayNo: existing?.dayNo ?? getScheduleDayNo(trip, scheduleDate),
@@ -332,10 +347,11 @@ async function addToTrip(forceReplace = false) {
     return
   }
 
+  ensureValidAddEndTime()
   isAddingToTrip.value = true
   try {
     const schedules = await fetchTripSchedules(props.accessToken, trip.id)
-    const scheduleDate = getScheduleDate(trip)
+    const scheduleDate = getSelectedScheduleDate(trip)
     const conflict = replaceCandidate.value ?? schedules.find((item) => item.scheduleDate === scheduleDate && toTimeInput(item.startTime) === addDraft.time) ?? null
 
     if (conflict && !forceReplace) {
@@ -364,10 +380,20 @@ function closeAddModal() {
 }
 
 watch(upcomingTrips, (nextTrips) => {
-  if (!addDraft.tripId && nextTrips[0]) addDraft.tripId = String(nextTrips[0].id)
+  if (!addDraft.tripId && nextTrips[0]) {
+    addDraft.tripId = String(nextTrips[0].id)
+    addDraft.date = getScheduleDate(nextTrips[0])
+  }
 }, { immediate: true })
 
-watch(() => [addDraft.tripId, addDraft.time], () => {
+watch(() => addDraft.tripId, () => {
+  const trip = upcomingTrips.value.find((item) => String(item.id) === addDraft.tripId)
+  addDraft.date = trip ? getScheduleDate(trip) : ''
+  replaceCandidate.value = null
+})
+
+watch(() => [addDraft.date, addDraft.time], () => {
+  ensureValidAddEndTime()
   replaceCandidate.value = null
 })
 
@@ -680,8 +706,33 @@ onBeforeUnmount(() => {
               </span>
             </label>
             <label class="block">
-              <span class="mb-1.5 block text-xs font-black text-slate-950">방문 시간</span>
-              <input v-model="addDraft.time" type="time" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" />
+              <span class="mb-1.5 block text-xs font-black text-slate-950">방문 날짜 / 시간</span>
+              <input
+                v-model="addDraft.date"
+                data-testid="add-place-date"
+                type="date"
+                class="brand-input mb-3 h-10 w-full rounded-lg px-3 text-sm outline-none"
+                :min="upcomingTrips.find((trip) => String(trip.id) === addDraft.tripId)?.startDate ?? undefined"
+                :max="upcomingTrips.find((trip) => String(trip.id) === addDraft.tripId)?.endDate ?? undefined"
+              />
+              <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <input
+                  v-model="addDraft.time"
+                  data-testid="add-place-start-time"
+                  type="time"
+                  class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none"
+                  aria-label="시작 시간"
+                />
+                <input
+                  v-model="addDraft.endTime"
+                  data-testid="add-place-end-time"
+                  type="time"
+                  class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none"
+                  aria-label="종료 시간"
+                  :min="addDraft.time"
+                  @change="ensureValidAddEndTime"
+                />
+              </div>
             </label>
             <label class="block">
               <span class="mb-1.5 block text-xs font-black text-slate-950">메모</span>
