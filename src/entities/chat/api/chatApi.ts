@@ -29,6 +29,11 @@ export type ChatSocketMessage =
       message: null
       error: string
     }
+  | {
+      type: 'AI_ANALYSIS_COMPLETED'
+      tripId: number
+      analysisRunId: number
+    }
 
 export async function fetchChatMessages(token: string, tripId: number, limit = 50) {
   const url = new URL(`/api/chats/trips/${tripId}/messages`, apiBaseUrl)

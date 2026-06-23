@@ -59,7 +59,7 @@ async function request(
   const response = await fetch(new URL(path, apiBaseUrl).toString(), {
     method,
     headers,
-    body: payload ? JSON.stringify(payload) : undefined,
+    ...(payload ? { body: JSON.stringify(payload) } : {}),
   })
   if (!response.ok) {
     if (response.status === 401) throw new Error('로그인이 필요합니다.')

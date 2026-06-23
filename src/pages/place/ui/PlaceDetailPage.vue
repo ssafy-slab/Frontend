@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CalendarPlus, ChevronDown, Clock3, Cloud, CloudRain, CloudSnow, CloudSun, Droplets, Fuel, Heart, LoaderCircle, Map as MapIcon, MessageSquareText, Pill, Share2, Star, Store, Sun, Thermometer, Umbrella, Vote, Wind, X } from 'lucide-vue-next'
+import { CalendarPlus, ChevronDown, Clock3, Cloud, CloudRain, CloudSnow, CloudSun, Droplets, Fuel, Heart, LoaderCircle, Map as MapIcon, MessageSquareText, Pill, Share2, Star, Store, Sun, Umbrella, Vote, Wind, X } from 'lucide-vue-next'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { fetchPlaceNearbyFacilities, fetchPlaceWeather } from '@/entities/place/api/placeApi'
 import type { NearbyFacilitiesResponse, NearbyFacilityType, PlaceWeather, PlaceWeatherForecast } from '@/entities/place/api/placeApi'

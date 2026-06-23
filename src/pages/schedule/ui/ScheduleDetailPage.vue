@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { CalendarCheck, ChevronDown, Link, ListOrdered, MapPin, Pencil, Plus, Search, Send, Trash2, UserCog, X } from 'lucide-vue-next'
+import { CalendarCheck, ChevronDown, Link, ListOrdered, LoaderCircle, MapPin, Pencil, Plus, Search, Send, Sparkles, Trash2, UserCog, X } from 'lucide-vue-next'
 import type { Trip } from '@/entities/travel/model/travel'
 import type { AuthUser } from '@/entities/auth/api/authApi'
 import { createChatMessagePayload, createChatSubscribePayload, fetchChatMessages, getChatSocketUrl } from '@/entities/chat/api/chatApi'
 import type { ChatMessageResponse, ChatSocketMessage } from '@/entities/chat/api/chatApi'
 import { fetchPlaces } from '@/entities/place/api/placeApi'
+import { analyzeTripChat, applyAiAnalysisRun, applyAiSuggestion, getAiSuggestions, rejectAiAnalysisRun, rejectAiSuggestion } from '@/entities/travel/api/tripAiApi'
+import type { AiSuggestion, AiSuggestionStatus } from '@/entities/travel/api/tripAiApi'
 import { createChecklistItem, createInviteCode, createTripSchedule, deleteChecklistItem, deleteScheduleItem, fetchChecklistItems, fetchTripMembers, fetchTripSchedules, updateTripMemberRole, updateTripSchedule } from '@/entities/travel/api/tripApi'
 import type { ChecklistItemResponse, TripMemberResponse, TripMemberRole, TripSchedulePayload, TripScheduleResponse } from '@/entities/travel/api/tripApi'
 import { canInviteTripMembers } from '@/entities/travel/model/tripAccess'
@@ -67,6 +69,16 @@ const isLoadingPlaces = ref(false)
 const isLoadingChecklist = ref(false)
 const isLoadingMembers = ref(false)
 const isLoadingMessages = ref(false)
+const suggestions = ref<AiSuggestion[]>([])
+const selectedStatus = ref<AiSuggestionStatus>('PENDING')
+const isLoadingSuggestions = ref(false)
+const isAnalyzing = ref(false)
+const applyingSuggestionIds = ref<number[]>([])
+const rejectingSuggestionIds = ref<number[]>([])
+const bulkProcessingRunId = ref<number | null>(null)
+const hasNewSuggestions = ref(false)
+const aiError = ref('')
+const additionalRequest = ref('')
 const chatSocket = ref<WebSocket | null>(null)
 const chatListEl = ref<HTMLElement | null>(null)
 const pendingChatMessages = ref<string[]>([])
@@ -103,6 +115,18 @@ const scheduleGroups = computed(() => {
   })
   return Array.from(groups, ([date, items]) => ({ date, items }))
 })
+const suggestionGroups = computed(() => {
+  const groups = new Map<number, AiSuggestion[]>()
+  suggestions.value.forEach((suggestion) => {
+    groups.set(suggestion.analysisRunId, [...(groups.get(suggestion.analysisRunId) ?? []), suggestion])
+  })
+  return Array.from(groups, ([analysisRunId, items]) => ({ analysisRunId, items }))
+})
+const aiStatusOptions: Array<{ value: AiSuggestionStatus; label: string }> = [
+  { value: 'PENDING', label: '검토 대기' },
+  { value: 'APPLIED', label: '적용 완료' },
+  { value: 'REJECTED', label: '거절됨' },
+]
 
 function compareScheduleItems(left: ScheduleItem, right: ScheduleItem) {
   const dateCompare = left.date.localeCompare(right.date)
@@ -458,6 +482,128 @@ function appendServerMessage(message: ChatMessageResponse) {
   scrollChatToBottom()
 }
 
+function formatSuggestionDate(date: string) {
+  const [year, month, day] = date.split('-')
+  return `${year}년 ${Number(month)}월 ${Number(day)}일`
+}
+
+function formatSuggestionTime(time: string | null) {
+  return time ? time.slice(0, 5) : ''
+}
+
+function suggestionStatusLabel(status: AiSuggestionStatus) {
+  if (status === 'APPLIED') return '적용 완료'
+  if (status === 'REJECTED') return '거절됨'
+  return '검토 대기'
+}
+
+async function loadAiSuggestions(status: AiSuggestionStatus = selectedStatus.value) {
+  if (!props.accessToken || !props.trip?.id) {
+    suggestions.value = []
+    return
+  }
+
+  isLoadingSuggestions.value = true
+  aiError.value = ''
+  try {
+    suggestions.value = await getAiSuggestions(props.accessToken, props.trip.id, status)
+  } catch (error) {
+    aiError.value = error instanceof Error ? error.message : 'AI 일정 제안을 불러오지 못했습니다.'
+    emit('saved', aiError.value)
+  } finally {
+    isLoadingSuggestions.value = false
+  }
+}
+
+async function selectAiStatus(status: AiSuggestionStatus) {
+  selectedStatus.value = status
+  hasNewSuggestions.value = false
+  await loadAiSuggestions(status)
+}
+
+async function requestAiAnalysis() {
+  if (!props.accessToken || !props.trip?.id || isAnalyzing.value) return
+
+  isAnalyzing.value = true
+  aiError.value = ''
+  try {
+    const result = await analyzeTripChat(props.accessToken, props.trip.id, {
+      messageLimit: 100,
+      additionalRequest: additionalRequest.value.trim() || null,
+    })
+    selectedStatus.value = 'PENDING'
+    suggestions.value = result.suggestions
+    hasNewSuggestions.value = result.suggestions.length > 0
+    additionalRequest.value = ''
+    emit('saved', result.suggestions.length > 0 ? 'AI 일정 제안이 도착했습니다.' : '새로운 AI 일정 제안이 없습니다.')
+  } catch (error) {
+    aiError.value = error instanceof Error ? error.message : 'AI 일정 분석을 시작하지 못했습니다.'
+    emit('saved', aiError.value)
+  } finally {
+    isAnalyzing.value = false
+  }
+}
+
+function setSuggestionProcessing(ids: number[], suggestionId: number, active: boolean) {
+  return active ? [...ids, suggestionId] : ids.filter((id) => id !== suggestionId)
+}
+
+async function applySuggestion(suggestion: AiSuggestion) {
+  if (!props.accessToken || !props.trip?.id) return
+  applyingSuggestionIds.value = setSuggestionProcessing(applyingSuggestionIds.value, suggestion.aiSuggestionId, true)
+  try {
+    await applyAiSuggestion(props.accessToken, props.trip.id, suggestion.aiSuggestionId)
+    await Promise.all([loadAiSuggestions(), loadScheduleItems()])
+    emit('saved', '일정에 적용했습니다.')
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : 'AI 일정 제안을 적용하지 못했습니다.')
+    await Promise.all([loadAiSuggestions(), loadScheduleItems()])
+  } finally {
+    applyingSuggestionIds.value = setSuggestionProcessing(applyingSuggestionIds.value, suggestion.aiSuggestionId, false)
+  }
+}
+
+async function rejectSuggestion(suggestion: AiSuggestion) {
+  if (!props.accessToken || !props.trip?.id) return
+  rejectingSuggestionIds.value = setSuggestionProcessing(rejectingSuggestionIds.value, suggestion.aiSuggestionId, true)
+  try {
+    await rejectAiSuggestion(props.accessToken, props.trip.id, suggestion.aiSuggestionId)
+    await loadAiSuggestions()
+    emit('saved', '제안을 거절했습니다.')
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : 'AI 일정 제안을 거절하지 못했습니다.')
+    await loadAiSuggestions()
+  } finally {
+    rejectingSuggestionIds.value = setSuggestionProcessing(rejectingSuggestionIds.value, suggestion.aiSuggestionId, false)
+  }
+}
+
+async function processAnalysisRun(analysisRunId: number, action: 'apply' | 'reject') {
+  if (!props.accessToken || !props.trip?.id || bulkProcessingRunId.value !== null) return
+  bulkProcessingRunId.value = analysisRunId
+  try {
+    if (action === 'apply') {
+      await applyAiAnalysisRun(props.accessToken, props.trip.id, analysisRunId)
+      await Promise.all([loadAiSuggestions(), loadScheduleItems()])
+      emit('saved', 'AI 제안을 일정에 모두 적용했습니다.')
+    } else {
+      await rejectAiAnalysisRun(props.accessToken, props.trip.id, analysisRunId)
+      await loadAiSuggestions()
+      emit('saved', 'AI 제안을 모두 거절했습니다.')
+    }
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : 'AI 제안 묶음을 처리하지 못했습니다.')
+    await Promise.all([loadAiSuggestions(), action === 'apply' ? loadScheduleItems() : Promise.resolve()])
+  } finally {
+    bulkProcessingRunId.value = null
+  }
+}
+
+function openSuggestionPlace(suggestion: AiSuggestion) {
+  if (suggestion.suggestedPlaceId === null) return
+  emit('openPlace', suggestion.suggestedPlaceId)
+}
+
 function mergeLoadedChatMessages(loadedMessages: Message[]) {
   const loadedIds = new Set(loadedMessages.map((message) => message.id))
   const currentOnlyMessages = messages.value.filter((message) => !loadedIds.has(message.id))
@@ -515,6 +661,13 @@ function connectChatSocket() {
     const data = JSON.parse(event.data) as ChatSocketMessage
     if (data.type === 'MESSAGE' && data.message) {
       appendServerMessage(data.message)
+      return
+    }
+    if (data.type === 'AI_ANALYSIS_COMPLETED' && data.tripId === props.trip?.id) {
+      selectedStatus.value = 'PENDING'
+      hasNewSuggestions.value = true
+      void loadAiSuggestions('PENDING')
+      emit('saved', '새로운 AI 일정 제안이 도착했습니다.')
       return
     }
     if (data.type === 'ERROR' && data.error) {
@@ -640,12 +793,16 @@ onMounted(() => {
   void loadScheduleItems()
   void loadChecklistItems()
   void resetChat()
+  void loadAiSuggestions()
 })
 watch(() => [props.accessToken, props.trip?.id, props.trip?.tripType], loadMembers)
 watch(() => [props.accessToken, props.trip?.id], loadScheduleItems)
 watch(() => [props.accessToken, props.trip?.id], loadChecklistItems)
 watch(() => [props.accessToken, props.trip?.id], () => {
   void resetChat()
+  selectedStatus.value = 'PENDING'
+  hasNewSuggestions.value = false
+  void loadAiSuggestions('PENDING')
 })
 onBeforeUnmount(closeChatSocket)
 </script>
@@ -738,6 +895,7 @@ onBeforeUnmount(closeChatSocket)
         </div>
       </aside>
 
+      <div class="min-w-0 space-y-4">
       <section class="brand-card grid min-h-[520px] grid-rows-[52px_1fr_72px] overflow-hidden rounded-xl">
         <div class="border-b border-slate-200 bg-slate-100 px-4 py-3">
           <h2 class="font-black text-slate-950">일정 조율 채팅</h2>
@@ -773,6 +931,143 @@ onBeforeUnmount(closeChatSocket)
           </button>
         </div>
       </section>
+
+      <section data-testid="ai-suggestions-section" class="brand-card overflow-hidden rounded-xl">
+        <div class="border-b border-slate-200 bg-gradient-to-r from-brand-50 to-white p-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="flex items-center gap-2">
+                <Sparkles :size="19" class="text-brand-500" />
+                <h2 class="font-black text-slate-950">AI 일정 제안</h2>
+                <span v-if="hasNewSuggestions" class="rounded-full bg-brand-500 px-2 py-0.5 text-[11px] font-black text-white">새 제안</span>
+              </div>
+              <p class="mt-1 text-xs font-semibold text-slate-500">채팅 내용을 바탕으로 일정 후보를 제안합니다.</p>
+            </div>
+            <button
+              data-testid="analyze-trip-chat"
+              class="inline-flex h-10 items-center gap-2 rounded-lg bg-brand-500 px-4 text-sm font-black text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="isAnalyzing"
+              @click="requestAiAnalysis"
+            >
+              <LoaderCircle v-if="isAnalyzing" :size="16" class="animate-spin" />
+              <Sparkles v-else :size="16" />
+              {{ isAnalyzing ? 'AI가 채팅을 분석하고 있습니다' : 'AI 일정 분석' }}
+            </button>
+          </div>
+          <textarea
+            v-model="additionalRequest"
+            data-testid="ai-additional-request"
+            class="brand-input mt-3 min-h-20 w-full resize-y rounded-lg px-3 py-2 text-sm outline-none"
+            placeholder="추가 요청이 있다면 입력하세요. 예: 오전에는 바다를 먼저 가고 싶어요."
+            :disabled="isAnalyzing"
+          />
+        </div>
+
+        <div class="p-4">
+          <div class="mb-4 flex flex-wrap gap-2">
+            <button
+              v-for="option in aiStatusOptions"
+              :key="option.value"
+              :data-testid="`ai-status-${option.value}`"
+              class="rounded-full px-3 py-1.5 text-xs font-black transition"
+              :class="selectedStatus === option.value ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-brand-50 hover:text-brand-600'"
+              @click="selectAiStatus(option.value)"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+
+          <p v-if="isLoadingSuggestions" class="rounded-lg bg-brand-50 px-3 py-3 text-sm font-black text-brand-600">
+            AI 일정 제안을 불러오는 중입니다.
+          </p>
+          <p v-else-if="aiError" class="rounded-lg bg-red-50 px-3 py-3 text-sm font-bold text-red-600">{{ aiError }}</p>
+          <p v-else-if="suggestions.length === 0" class="rounded-lg bg-slate-50 px-3 py-5 text-center text-sm font-bold text-slate-500">
+            아직 도착한 AI 일정 제안이 없습니다.
+          </p>
+
+          <div v-else class="space-y-5">
+            <section v-for="group in suggestionGroups" :key="group.analysisRunId" class="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+              <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p class="text-xs font-black text-slate-500">분석 결과 #{{ group.analysisRunId }} · {{ group.items.length }}개</p>
+                <div v-if="selectedStatus === 'PENDING'" class="flex gap-2">
+                  <button
+                    :data-testid="`reject-ai-run-${group.analysisRunId}`"
+                    class="rounded-lg bg-white px-3 py-2 text-xs font-black text-slate-600 ring-1 ring-slate-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                    :disabled="bulkProcessingRunId !== null"
+                    @click="processAnalysisRun(group.analysisRunId, 'reject')"
+                  >
+                    전체 거절
+                  </button>
+                  <button
+                    :data-testid="`apply-ai-run-${group.analysisRunId}`"
+                    class="rounded-lg bg-brand-500 px-3 py-2 text-xs font-black text-white hover:bg-brand-600 disabled:opacity-50"
+                    :disabled="bulkProcessingRunId !== null"
+                    @click="processAnalysisRun(group.analysisRunId, 'apply')"
+                  >
+                    {{ bulkProcessingRunId === group.analysisRunId ? '처리 중' : '전체 적용' }}
+                  </button>
+                </div>
+              </div>
+
+              <div class="space-y-3">
+                <article v-for="suggestion in group.items" :key="suggestion.aiSuggestionId" class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p class="text-xs font-black text-brand-500">
+                        {{ formatSuggestionDate(suggestion.scheduleDate) }} · {{ formatSuggestionTime(suggestion.startTime) }}
+                        <template v-if="suggestion.endTime"> ~ {{ formatSuggestionTime(suggestion.endTime) }}</template>
+                      </p>
+                      <h3 class="mt-1 text-lg font-black text-slate-950">{{ suggestion.title }}</h3>
+                    </div>
+                    <span class="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-600">
+                      {{ suggestionStatusLabel(suggestion.status) }}
+                    </span>
+                  </div>
+
+                  <div v-if="suggestion.suggestedPlaceName" class="mt-3 rounded-lg bg-brand-50 p-3">
+                    <p class="text-xs font-black text-brand-500">장소</p>
+                    <p class="mt-1 font-black text-slate-900">{{ suggestion.suggestedPlaceName }}</p>
+                    <p v-if="suggestion.suggestedRegionHint" class="mt-0.5 text-xs font-semibold text-slate-500">{{ suggestion.suggestedRegionHint }}</p>
+                    <p v-if="suggestion.suggestedPlaceId === null" class="mt-2 text-xs font-bold text-amber-600">DB에 연결되지 않은 장소지만 자유 일정으로 적용할 수 있습니다.</p>
+                  </div>
+                  <p v-if="suggestion.summary" class="mt-3 text-sm font-semibold leading-6 text-slate-700">{{ suggestion.summary }}</p>
+                  <p v-if="suggestion.reason" class="mt-2 text-xs font-semibold leading-5 text-slate-500">제안 이유: {{ suggestion.reason }}</p>
+
+                  <div class="mt-4 flex flex-wrap justify-end gap-2">
+                    <button
+                      :data-testid="`open-ai-place-${suggestion.aiSuggestionId}`"
+                      class="rounded-lg bg-white px-3 py-2 text-xs font-black text-brand-500 ring-1 ring-brand-100 hover:bg-brand-50 disabled:cursor-not-allowed disabled:text-slate-300 disabled:ring-slate-200"
+                      :disabled="suggestion.suggestedPlaceId === null"
+                      @click="openSuggestionPlace(suggestion)"
+                    >
+                      장소 상세 보기
+                    </button>
+                    <template v-if="suggestion.status === 'PENDING'">
+                      <button
+                        :data-testid="`reject-ai-suggestion-${suggestion.aiSuggestionId}`"
+                        class="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                        :disabled="rejectingSuggestionIds.includes(suggestion.aiSuggestionId)"
+                        @click="rejectSuggestion(suggestion)"
+                      >
+                        {{ rejectingSuggestionIds.includes(suggestion.aiSuggestionId) ? '거절 중' : '거절' }}
+                      </button>
+                      <button
+                        :data-testid="`apply-ai-suggestion-${suggestion.aiSuggestionId}`"
+                        class="rounded-lg bg-brand-500 px-3 py-2 text-xs font-black text-white hover:bg-brand-600 disabled:opacity-50"
+                        :disabled="applyingSuggestionIds.includes(suggestion.aiSuggestionId)"
+                        @click="applySuggestion(suggestion)"
+                      >
+                        {{ applyingSuggestionIds.includes(suggestion.aiSuggestionId) ? '적용 중' : '일정에 적용' }}
+                      </button>
+                    </template>
+                  </div>
+                </article>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+      </div>
 
       <aside class="space-y-4">
         <section class="brand-card rounded-xl p-4">
