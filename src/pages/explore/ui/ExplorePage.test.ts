@@ -79,12 +79,12 @@ describe('ExplorePage review sorting', () => {
     await recommended.trigger('click')
     await waitForFilterReload()
     await flushPromises()
-    expect(fetchPlaces).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'recommended' }))
+    expect(fetchPlaces).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'recommended' }), undefined)
 
     await recommended.trigger('click')
     await waitForFilterReload()
     await flushPromises()
-    expect(fetchPlaces).toHaveBeenLastCalledWith(expect.objectContaining({ sort: undefined }))
+    expect(fetchPlaces).toHaveBeenLastCalledWith(expect.objectContaining({ sort: undefined }), undefined)
   })
 
   it('uses tokenized search for the explore search form', async () => {
@@ -106,6 +106,7 @@ describe('ExplorePage review sorting', () => {
         keyword: '강릉 카페',
         searchMode: 'tokenized',
       }),
+      undefined,
     )
   })
 

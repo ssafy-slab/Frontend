@@ -141,6 +141,40 @@ describe('CommunityEditorPage cells', () => {
     expect(wrapper.findAll('[data-testid^="community-cell-text-"]')).toHaveLength(7)
   })
 
+  it('accepts images larger than two megabytes and up to five megabytes', async () => {
+    const wrapper = mount(CommunityEditorPage, {
+      props: { accessToken: 'token' },
+      global: { stubs: { Transition: false } },
+    })
+
+    await wrapper.get('[data-testid="community-title-input"]').setValue('Large image')
+    await wrapper.get('[data-testid="insert-image-cell-after-0"]').trigger('click')
+    const file = new File([new Uint8Array(3 * 1024 * 1024)], 'large.jpg', { type: 'image/jpeg' })
+    const imageInput = wrapper.get('[data-testid="community-cell-image-1"]').element as HTMLInputElement
+    Object.defineProperty(imageInput, 'files', { value: [file] })
+    await wrapper.get('[data-testid="community-cell-image-1"]').trigger('change')
+    await wrapper.get('[data-testid="submit-community-post"]').trigger('click')
+    await flushPromises()
+
+    expect(uploadCommunityImage).toHaveBeenCalledWith('token', file)
+  })
+
+  it('rejects images larger than five megabytes before upload', async () => {
+    const wrapper = mount(CommunityEditorPage, {
+      props: { accessToken: 'token' },
+      global: { stubs: { Transition: false } },
+    })
+
+    await wrapper.get('[data-testid="insert-image-cell-after-0"]').trigger('click')
+    const file = new File([new Uint8Array((5 * 1024 * 1024) + 1)], 'too-large.jpg', { type: 'image/jpeg' })
+    const imageInput = wrapper.get('[data-testid="community-cell-image-1"]').element as HTMLInputElement
+    Object.defineProperty(imageInput, 'files', { value: [file] })
+    await wrapper.get('[data-testid="community-cell-image-1"]').trigger('change')
+
+    expect(wrapper.text()).toContain('이미지는 5MB 이하만 업로드할 수 있습니다.')
+    expect(uploadCommunityImage).not.toHaveBeenCalled()
+  })
+
   it('previews the selected original image without a gray backing layer', async () => {
     const wrapper = mount(CommunityEditorPage, {
       props: { accessToken: 'token' },

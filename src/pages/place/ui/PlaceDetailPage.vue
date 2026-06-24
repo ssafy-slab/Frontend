@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { CalendarPlus, ChevronDown, Clock3, Cloud, CloudRain, CloudSnow, CloudSun, Droplets, Fuel, Heart, LoaderCircle, Map as MapIcon, MessageSquareText, Pill, Share2, Star, Store, Sun, Umbrella, Vote, Wind, X } from 'lucide-vue-next'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
-import { fetchPlaceNearbyFacilities, fetchPlaceWeather } from '@/entities/place/api/placeApi'
+import { fetchPlaceNearbyFacilities, fetchPlaceWeather, likePlace, unlikePlace } from '@/entities/place/api/placeApi'
 import type { NearbyFacilitiesResponse, NearbyFacilityType, PlaceWeather, PlaceWeatherForecast } from '@/entities/place/api/placeApi'
 import { createPlaceReview, deleteMyPlaceReview, fetchPlaceReviews, updateMyPlaceReview } from '@/entities/review/api/reviewApi'
 import type { PlaceReview, PlaceReviewSummary } from '@/entities/review/api/reviewApi'
@@ -43,6 +43,28 @@ const showAddModal = ref(false)
 const isAddingToTrip = ref(false)
 const replaceCandidate = ref<TripScheduleResponse | null>(null)
 const showMapModal = ref(false)
+
+watch(() => props.place?.liked, (value) => {
+  liked.value = Boolean(value)
+}, { immediate: true })
+
+async function togglePlaceLike() {
+  if (!props.place) return
+  if (!props.accessToken) {
+    emit('saved', '로그인 후 좋아요를 누를 수 있습니다.')
+    emit('change', 'login')
+    return
+  }
+  const wasLiked = liked.value
+  liked.value = !wasLiked
+  try {
+    if (wasLiked) await unlikePlace(props.place.id, props.accessToken)
+    else await likePlace(props.place.id, props.accessToken)
+  } catch (error) {
+    liked.value = wasLiked
+    emit('saved', error instanceof Error ? error.message : '여행지 좋아요 처리에 실패했습니다.')
+  }
+}
 const shouldRenderMapModal = ref(false)
 const showWeatherDetail = ref(false)
 let nearbyFacilitiesRequestId = 0
@@ -608,7 +630,7 @@ watch(() => [addDraft.tripId, addDraft.time], () => {
             class="absolute right-5 top-5 grid size-11 place-items-center rounded-full bg-white/90 text-slate-400 shadow-md backdrop-blur transition hover:text-red-500"
             :class="liked ? 'text-red-500' : ''"
             aria-label="좋아요"
-            @click="liked = !liked"
+            @click="togglePlaceLike"
           >
             <Heart :size="22" :fill="liked ? 'currentColor' : 'none'" />
           </button>

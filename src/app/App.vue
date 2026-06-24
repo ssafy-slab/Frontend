@@ -79,7 +79,7 @@ function openPlace(place: Place) {
 
 async function openPlaceById(placeId: number) {
   try {
-    openPlace(await fetchPlace(placeId))
+    openPlace(await fetchPlace(placeId, authStore.accessToken || undefined))
   } catch {
     showToast('여행지 정보를 불러오지 못했습니다.')
   }

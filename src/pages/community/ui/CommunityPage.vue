@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Bookmark, ChevronDown, Edit3, Globe2, Heart, MessageCircle, Search, SlidersHorizontal, User } from 'lucide-vue-next'
+import { ChevronDown, Edit3, Globe2, Heart, MessageCircle, Search, SlidersHorizontal, User } from 'lucide-vue-next'
 import {
-  bookmarkCommunityPost,
   fetchCommunityPosts,
+  likeCommunityPost,
   resolveCommunityImageUrl,
-  unbookmarkCommunityPost,
+  unlikeCommunityPost,
   type CommunityPostSummary,
   type CommunitySort,
 } from '@/entities/community/api/communityApi'
@@ -41,7 +41,7 @@ const posts = ref<CommunityPostSummary[]>([])
 const currentPage = ref(1)
 const loading = ref(false)
 const errorMessage = ref('')
-const bookmarkingPostIds = ref<number[]>([])
+const likingPostIds = ref<number[]>([])
 const sortOpen = ref(false)
 const sortMenuRef = ref<HTMLElement | null>(null)
 const fallbackImage = '/images/default-place.svg'
@@ -133,28 +133,30 @@ function openWrite() {
   emit('change', 'community-write')
 }
 
-async function toggleBookmark(post: CommunityPostSummary) {
+async function toggleLike(post: CommunityPostSummary) {
   if (!props.accessToken) {
-    emit('saved', '로그인 후 게시글을 찜할 수 있습니다.')
+    emit('saved', '로그인 후 좋아요를 누를 수 있습니다.')
     emit('change', 'login')
     return
   }
-  if (bookmarkingPostIds.value.includes(post.postId)) return
+  if (likingPostIds.value.includes(post.postId)) return
 
-  const wasBookmarked = post.bookmarkedByMe
-  bookmarkingPostIds.value = [...bookmarkingPostIds.value, post.postId]
-  post.bookmarkedByMe = !wasBookmarked
+  const wasLiked = post.likedByMe
+  likingPostIds.value = [...likingPostIds.value, post.postId]
+  post.likedByMe = !wasLiked
+  post.likeCount += wasLiked ? -1 : 1
   try {
-    if (wasBookmarked) {
-      await unbookmarkCommunityPost(post.postId, props.accessToken)
+    if (wasLiked) {
+      await unlikeCommunityPost(post.postId, props.accessToken)
     } else {
-      await bookmarkCommunityPost(post.postId, props.accessToken)
+      await likeCommunityPost(post.postId, props.accessToken)
     }
   } catch (error) {
-    post.bookmarkedByMe = wasBookmarked
-    emit('saved', error instanceof Error ? error.message : '찜 처리에 실패했습니다.')
+    post.likedByMe = wasLiked
+    post.likeCount += wasLiked ? 1 : -1
+    emit('saved', error instanceof Error ? error.message : '좋아요 처리에 실패했습니다.')
   } finally {
-    bookmarkingPostIds.value = bookmarkingPostIds.value.filter((postId) => postId !== post.postId)
+    likingPostIds.value = likingPostIds.value.filter((postId) => postId !== post.postId)
   }
 }
 
@@ -265,16 +267,16 @@ onBeforeUnmount(() => {
         <div data-testid="community-card-image" class="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-slate-100">
           <img :src="postImageUrl(post.imageUrl)" :alt="post.title" class="h-full w-full object-cover" />
           <button
-            :data-testid="`bookmark-post-${post.postId}`"
+            :data-testid="`like-post-${post.postId}`"
             class="absolute right-3 top-3 grid size-10 place-items-center rounded-full bg-white/95 text-slate-600 shadow-md transition hover:text-brand-600 disabled:cursor-wait disabled:opacity-60"
-            :class="post.bookmarkedByMe ? 'text-brand-600' : ''"
+            :class="post.likedByMe ? 'text-red-500' : ''"
             type="button"
-            :aria-label="post.bookmarkedByMe ? '찜 해제' : '찜 추가'"
-            :aria-pressed="post.bookmarkedByMe"
-            :disabled="bookmarkingPostIds.includes(post.postId)"
-            @click.stop="toggleBookmark(post)"
+            :aria-label="post.likedByMe ? '좋아요 취소' : '좋아요'"
+            :aria-pressed="post.likedByMe"
+            :disabled="likingPostIds.includes(post.postId)"
+            @click.stop="toggleLike(post)"
           >
-            <Bookmark :size="19" :fill="post.bookmarkedByMe ? 'currentColor' : 'none'" />
+            <Heart :size="19" :fill="post.likedByMe ? 'currentColor' : 'none'" />
           </button>
         </div>
         <div data-testid="community-card-body" class="flex flex-1 flex-col px-4 py-4">

@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  bookmarkCommunityPost,
+  likeCommunityPost,
   createCommunityComment,
   deleteCommunityComment,
-  fetchMyBookmarkedCommunityPosts,
-  unbookmarkCommunityPost,
+  fetchMyLikedCommunityPosts,
+  unlikeCommunityPost,
   updateCommunityComment,
 } from './communityApi'
 
@@ -67,18 +67,18 @@ describe('community comment API', () => {
   })
 })
 
-describe('community bookmark API', () => {
-  it('adds and removes a bookmark through separate endpoints', async () => {
+describe('community like API', () => {
+  it('adds and removes a like through separate endpoints', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
 
-    await bookmarkCommunityPost(12, 'token')
-    await unbookmarkCommunityPost(12, 'token')
+    await likeCommunityPost(12, 'token')
+    await unlikeCommunityPost(12, 'token')
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      expect.stringContaining('/api/community/posts/12/bookmark'),
+      expect.stringContaining('/api/community/posts/12/like'),
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({ Authorization: 'Bearer token' }),
@@ -86,7 +86,7 @@ describe('community bookmark API', () => {
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      expect.stringContaining('/api/community/posts/12/bookmark'),
+      expect.stringContaining('/api/community/posts/12/like'),
       expect.objectContaining({
         method: 'DELETE',
         headers: expect.objectContaining({ Authorization: 'Bearer token' }),
@@ -94,15 +94,15 @@ describe('community bookmark API', () => {
     )
   })
 
-  it('loads my bookmarked posts with bounded pagination', async () => {
+  it('loads my liked posts with bounded pagination', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify([]), { status: 200 }),
     )
 
-    await fetchMyBookmarkedCommunityPosts('token', 2, 70)
+    await fetchMyLikedCommunityPosts('token', 2, 70)
 
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringMatching(/\/api\/users\/me\/bookmarked-community-posts\?page=2&size=50$/),
+      expect.stringMatching(/\/api\/users\/me\/liked-community-posts\?page=2&size=50$/),
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer token' }),
       }),

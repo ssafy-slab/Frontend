@@ -6,9 +6,11 @@ import ProfilePage from './ProfilePage.vue'
 const { fetchMyPlaceReviews } = vi.hoisted(() => ({
   fetchMyPlaceReviews: vi.fn(),
 }))
-const { fetchMyBookmarkedCommunityPosts, unbookmarkCommunityPost } = vi.hoisted(() => ({
-  fetchMyBookmarkedCommunityPosts: vi.fn(),
-  unbookmarkCommunityPost: vi.fn(),
+const { fetchMyLikedCommunityPosts, unlikeCommunityPost, fetchMyLikedPlaces, unlikePlace } = vi.hoisted(() => ({
+  fetchMyLikedCommunityPosts: vi.fn(),
+  unlikeCommunityPost: vi.fn(),
+  fetchMyLikedPlaces: vi.fn(),
+  unlikePlace: vi.fn(),
 }))
 
 vi.mock('@/entities/review/api/reviewApi', () => ({
@@ -20,9 +22,14 @@ vi.mock('@/entities/community/api/communityApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/entities/community/api/communityApi')>()
   return {
     ...actual,
-    fetchMyBookmarkedCommunityPosts,
-    unbookmarkCommunityPost,
+    fetchMyLikedCommunityPosts,
+    unlikeCommunityPost,
   }
+})
+
+vi.mock('@/entities/place/api/placeApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/entities/place/api/placeApi')>()
+  return { ...actual, fetchMyLikedPlaces, unlikePlace }
 })
 
 describe('ProfilePage my reviews', () => {
@@ -50,14 +57,14 @@ describe('ProfilePage my reviews', () => {
       size: 10,
       totalPages: 2,
     })
-    fetchMyBookmarkedCommunityPosts.mockReset().mockResolvedValue([{
+    fetchMyLikedCommunityPosts.mockReset().mockResolvedValue([{
       postId: 12,
       userId: 4,
       authorNickname: 'writer',
       placeId: null,
       placeName: null,
       category: 'TRAVEL_TIP',
-      title: '찜한 여행 팁',
+      title: '좋아요한 여행 팁',
       excerpt: '좋은 글',
       imageUrl: null,
       likeCount: 3,
@@ -65,11 +72,17 @@ describe('ProfilePage my reviews', () => {
       viewCount: 10,
       createdAt: '2026-06-24T00:00:00',
       updatedAt: '2026-06-24T00:00:00',
-      likedByMe: false,
-      bookmarkedByMe: true,
+      likedByMe: true,
       mine: false,
     }])
-    unbookmarkCommunityPost.mockReset().mockResolvedValue(undefined)
+    fetchMyLikedPlaces.mockReset().mockResolvedValue([{
+      id: 30, title: '좋아요한 여행지', location: '서울', category: '관광', description: '',
+      image: '/place.jpg', thumbnailImage: '/place.jpg', detailImage: '/place.jpg', rating: 4.5,
+      reviewCount: '3', tags: [], marker: { top: '50%', left: '50%' }, coordinates: { lat: 37, lng: 127 },
+      liked: true,
+    }])
+    unlikeCommunityPost.mockReset().mockResolvedValue(undefined)
+    unlikePlace.mockReset().mockResolvedValue(undefined)
   })
 
   it('shows the current users reviews and opens the place', async () => {
@@ -90,37 +103,57 @@ describe('ProfilePage my reviews', () => {
     expect(wrapper.emitted('openPlace')?.[0]).toEqual([3])
   })
 
-  it('loads bookmarks on profile entry, opens a post, and removes an unbookmarked item', async () => {
+  it('loads liked posts, opens a post, and removes its like', async () => {
     const wrapper = mount(ProfilePage, {
       props: {
         currentUser: { userId: 7, email: 'a@b.com', nickname: '여행자', role: 'USER', localAccount: true },
       },
     })
+    await wrapper.get('button[data-tab="likes"]').trigger('click')
     await flushPromises()
+    expect(fetchMyLikedCommunityPosts).toHaveBeenCalledWith('token', 0, 20)
+    expect(wrapper.text()).toContain('좋아요한 여행 팁')
 
-    expect(fetchMyBookmarkedCommunityPosts).toHaveBeenCalledWith('token', 0, 20)
-    await wrapper.get('button[data-tab="bookmarks"]').trigger('click')
-    expect(wrapper.text()).toContain('찜한 여행 팁')
-
-    await wrapper.get('[data-testid="bookmarked-post-12"]').trigger('click')
+    await wrapper.get('[data-testid="liked-post-12"]').trigger('click')
     expect(wrapper.emitted('openPost')?.[0]).toEqual([12])
 
-    await wrapper.get('[data-testid="remove-bookmark-12"]').trigger('click')
+    await wrapper.get('[data-testid="remove-post-like-12"]').trigger('click')
     await flushPromises()
-    expect(unbookmarkCommunityPost).toHaveBeenCalledWith(12, 'token')
-    expect(wrapper.text()).toContain('찜한 게시글이 없습니다')
+    expect(unlikeCommunityPost).toHaveBeenCalledWith(12, 'token')
+    expect(wrapper.text()).toContain('좋아요한 게시글이 없습니다')
   })
 
-  it('shows the bookmarked-post empty state', async () => {
-    fetchMyBookmarkedCommunityPosts.mockResolvedValueOnce([])
+  it('loads liked places from the likes sub-tab', async () => {
     const wrapper = mount(ProfilePage, {
       props: {
         currentUser: { userId: 7, email: 'a@b.com', nickname: '여행자', role: 'USER', localAccount: true },
       },
     })
+    await wrapper.get('button[data-tab="likes"]').trigger('click')
+    await wrapper.get('[data-testid="liked-places-tab"]').trigger('click')
     await flushPromises()
-    await wrapper.get('button[data-tab="bookmarks"]').trigger('click')
+    expect(fetchMyLikedPlaces).toHaveBeenCalledWith('token', 0, 20)
+    expect(wrapper.text()).toContain('좋아요한 여행지')
+  })
 
-    expect(wrapper.text()).toContain('찜한 게시글이 없습니다')
+  it('uses the explore fallback image when a liked place only has the default svg', async () => {
+    fetchMyLikedPlaces.mockResolvedValueOnce([{
+      id: 30, title: '기본 이미지 여행지', location: '서울', category: '관광', description: '',
+      image: '/images/default-place.svg', thumbnailImage: '/images/default-place.svg',
+      detailImage: '/images/default-place.svg', rating: 0, reviewCount: '0', tags: [],
+      marker: { top: '50%', left: '50%' }, coordinates: { lat: 37, lng: 127 }, liked: true,
+    }])
+    const wrapper = mount(ProfilePage, {
+      props: {
+        currentUser: { userId: 7, email: 'a@b.com', nickname: '여행자', role: 'USER', localAccount: true },
+      },
+    })
+
+    await wrapper.get('button[data-tab="likes"]').trigger('click')
+    await wrapper.get('[data-testid="liked-places-tab"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="liked-place-30"] img').attributes('src'))
+      .toContain('images.unsplash.com')
   })
 })

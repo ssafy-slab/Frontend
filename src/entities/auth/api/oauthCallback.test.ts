@@ -66,6 +66,7 @@ describe('handleOAuthCallbackRedirect', () => {
         nickname: 'user',
         role: 'USER',
         localAccount: false,
+        oauthUser: true,
       },
     })
     expect(replaced).toEqual(['/'])

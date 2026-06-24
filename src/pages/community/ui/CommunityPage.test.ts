@@ -2,10 +2,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import CommunityPage from './CommunityPage.vue'
 
-const { bookmarkCommunityPost, fetchCommunityPosts, unbookmarkCommunityPost } = vi.hoisted(() => ({
-  bookmarkCommunityPost: vi.fn(),
+const { likeCommunityPost, fetchCommunityPosts, unlikeCommunityPost } = vi.hoisted(() => ({
+  likeCommunityPost: vi.fn(),
   fetchCommunityPosts: vi.fn(),
-  unbookmarkCommunityPost: vi.fn(),
+  unlikeCommunityPost: vi.fn(),
 }))
 
 function createPost(overrides: Record<string, unknown> = {}) {
@@ -21,7 +21,6 @@ function createPost(overrides: Record<string, unknown> = {}) {
     viewCount: 1,
     likeCount: 2,
     commentCount: 3,
-    bookmarkedByMe: false,
     likedByMe: false,
     mine: false,
     createdAt: '2026-06-24T00:00:00',
@@ -33,9 +32,9 @@ vi.mock('@/entities/community/api/communityApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/entities/community/api/communityApi')>()
   return {
     ...actual,
-    bookmarkCommunityPost,
+    likeCommunityPost,
     fetchCommunityPosts,
-    unbookmarkCommunityPost,
+    unlikeCommunityPost,
   }
 })
 
@@ -61,8 +60,7 @@ describe('CommunityPage card layout', () => {
         viewCount: 4,
         likeCount: 5,
         commentCount: 6,
-        bookmarkedByMe: true,
-        likedByMe: false,
+        likedByMe: true,
         mine: false,
         createdAt: '2026-06-23T00:00:00',
       }),
@@ -102,21 +100,21 @@ describe('CommunityPage card layout', () => {
     expect(placeRows[0]?.classes()).toEqual(expect.arrayContaining(['mb-2', 'rounded-full', 'bg-emerald-50', 'px-2.5', 'py-1']))
   })
 
-  it('toggles bookmarks without opening the post', async () => {
-    bookmarkCommunityPost.mockResolvedValue(undefined)
-    unbookmarkCommunityPost.mockResolvedValue(undefined)
+  it('toggles likes without opening the post', async () => {
+    likeCommunityPost.mockResolvedValue(undefined)
+    unlikeCommunityPost.mockResolvedValue(undefined)
     const wrapper = mount(CommunityPage, { props: { accessToken: 'token' } })
     await flushPromises()
 
-    await wrapper.get('[data-testid="bookmark-post-1"]').trigger('click')
+    await wrapper.get('[data-testid="like-post-1"]').trigger('click')
     await flushPromises()
-    expect(bookmarkCommunityPost).toHaveBeenCalledWith(1, 'token')
-    expect(wrapper.get('[data-testid="bookmark-post-1"]').attributes('aria-pressed')).toBe('true')
+    expect(likeCommunityPost).toHaveBeenCalledWith(1, 'token')
+    expect(wrapper.get('[data-testid="like-post-1"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.emitted('openPost')).toBeUndefined()
 
-    await wrapper.get('[data-testid="bookmark-post-2"]').trigger('click')
+    await wrapper.get('[data-testid="like-post-2"]').trigger('click')
     await flushPromises()
-    expect(unbookmarkCommunityPost).toHaveBeenCalledWith(2, 'token')
+    expect(unlikeCommunityPost).toHaveBeenCalledWith(2, 'token')
   })
 
   it('paginates community cards with previous and next controls', async () => {
@@ -144,18 +142,18 @@ describe('CommunityPage card layout', () => {
     expect(wrapper.findAll('[data-testid="community-card"]')).toHaveLength(9)
   })
 
-  it('rolls back a failed bookmark and sends guests to login', async () => {
-    bookmarkCommunityPost.mockRejectedValueOnce(new Error('찜 실패'))
+  it('rolls back a failed like and sends guests to login', async () => {
+    likeCommunityPost.mockRejectedValueOnce(new Error('좋아요 실패'))
     const wrapper = mount(CommunityPage, { props: { accessToken: 'token' } })
     await flushPromises()
 
-    await wrapper.get('[data-testid="bookmark-post-1"]').trigger('click')
+    await wrapper.get('[data-testid="like-post-1"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="bookmark-post-1"]').attributes('aria-pressed')).toBe('false')
-    expect(wrapper.emitted('saved')?.at(-1)).toEqual(['찜 실패'])
+    expect(wrapper.get('[data-testid="like-post-1"]').attributes('aria-pressed')).toBe('false')
+    expect(wrapper.emitted('saved')?.at(-1)).toEqual(['좋아요 실패'])
 
     await wrapper.setProps({ accessToken: undefined })
-    await wrapper.get('[data-testid="bookmark-post-1"]').trigger('click')
+    await wrapper.get('[data-testid="like-post-1"]').trigger('click')
     expect(wrapper.emitted('change')?.at(-1)).toEqual(['login'])
   })
 })

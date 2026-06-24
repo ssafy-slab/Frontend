@@ -27,7 +27,7 @@ import {
   X,
 } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { fetchPlaceFilters, fetchPlaceNearbyFacilities, fetchPlaces, fetchPlaceWeather } from '@/entities/place/api/placeApi'
+import { fetchPlaceFilters, fetchPlaceNearbyFacilities, fetchPlaces, fetchPlaceWeather, likePlace, resolvePlaceDisplayImage, unlikePlace } from '@/entities/place/api/placeApi'
 import type { NearbyFacilitiesResponse, NearbyFacilityType, PlaceCategory, PlaceWeather, RegionFilter } from '@/entities/place/api/placeApi'
 import { createPlaceReview, deleteMyPlaceReview, fetchPlaceReviews, updateMyPlaceReview } from '@/entities/review/api/reviewApi'
 import type { PlaceReview, PlaceReviewSummary } from '@/entities/review/api/reviewApi'
@@ -44,12 +44,6 @@ const props = defineProps<{
 }>()
 
 const pageSize = 20
-const fallbackPlaceImages = [
-  'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=75',
-  'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=900&q=75',
-  'https://images.unsplash.com/photo-1506816561089-5cc37b3aa9b0?auto=format&fit=crop&w=900&q=75',
-  'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=900&q=75',
-]
 const selectedPlaceId = ref<number | null>(null)
 const likedIds = ref(new Set<number>())
 const selectedCategory = ref('')
@@ -177,8 +171,7 @@ function hasPlaceImage(place: Place) {
 }
 
 function placeImage(place: Place, detail = false) {
-  if (hasPlaceImage(place)) return detail ? place.detailImage || place.image : place.thumbnailImage || place.image
-  return fallbackPlaceImages[Math.abs(place.id) % fallbackPlaceImages.length]
+  return resolvePlaceDisplayImage(place, detail)
 }
 const listSheetDragStyle = computed(() => {
   if (!listSheet.value) return undefined
@@ -235,9 +228,10 @@ async function loadPlaces(nextPage = 0) {
       sort: selectedSort.value || undefined,
       page: nextPage,
       size: pageSize,
-    })
+    }, props.accessToken || undefined)
 
     places.value = nextPage === 0 ? result.content : [...places.value, ...result.content]
+    likedIds.value = new Set(places.value.filter((place) => place.liked).map((place) => place.id))
     page.value = result.page
     totalElements.value = result.totalElements
     hasNext.value = result.hasNext
@@ -292,14 +286,26 @@ function scheduleFilterReload() {
   }, 0)
 }
 
-function toggleLike(place: Place) {
-  const next = new Set(likedIds.value)
-  if (next.has(place.id)) next.delete(place.id)
-  else {
-    next.add(place.id)
-    emit('saved', `${place.title}을(를) 좋아요에 추가했습니다.`)
+async function toggleLike(place: Place) {
+  if (!props.accessToken) {
+    emit('saved', '로그인 후 좋아요를 누를 수 있습니다.')
+    return
   }
+  const next = new Set(likedIds.value)
+  const wasLiked = next.has(place.id)
+  if (wasLiked) next.delete(place.id)
+  else next.add(place.id)
   likedIds.value = next
+  try {
+    if (wasLiked) await unlikePlace(place.id, props.accessToken)
+    else await likePlace(place.id, props.accessToken)
+  } catch (error) {
+    const rollback = new Set(likedIds.value)
+    if (wasLiked) rollback.add(place.id)
+    else rollback.delete(place.id)
+    likedIds.value = rollback
+    emit('saved', error instanceof Error ? error.message : '여행지 좋아요 처리에 실패했습니다.')
+  }
 }
 
 function openAddModal(place: Place) {

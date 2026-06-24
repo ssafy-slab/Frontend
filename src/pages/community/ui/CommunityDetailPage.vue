@@ -1,16 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { ArrowLeft, Bookmark, Edit3, Heart, MessageCircle, MapPin, Send, Trash2, User } from 'lucide-vue-next'
+import { ArrowLeft, Edit3, Heart, MessageCircle, MapPin, Send, Trash2, User } from 'lucide-vue-next'
 import {
-  bookmarkCommunityPost,
   createCommunityComment,
   deleteCommunityComment,
   deleteCommunityPost,
   fetchCommunityComments,
   fetchCommunityPost,
   resolveCommunityImageUrl,
-  toggleCommunityPostLike,
-  unbookmarkCommunityPost,
+  likeCommunityPost,
+  unlikeCommunityPost,
   updateCommunityComment,
   type CommunityComment,
   type CommunityPostDetail,
@@ -42,7 +41,6 @@ const comments = ref<CommunityComment[]>([])
 const commentDraft = ref('')
 const loading = ref(false)
 const deleting = ref(false)
-const bookmarking = ref(false)
 const submittingComment = ref(false)
 const submittingReply = ref(false)
 const savingComment = ref(false)
@@ -140,7 +138,8 @@ async function toggleLike() {
     likeCount: post.value.likeCount + (wasLiked ? -1 : 1),
   }
   try {
-    await toggleCommunityPostLike(post.value.postId, props.accessToken)
+    if (wasLiked) await unlikeCommunityPost(post.value.postId, props.accessToken)
+    else await likeCommunityPost(post.value.postId, props.accessToken)
   } catch (error) {
     post.value = {
       ...post.value,
@@ -148,31 +147,6 @@ async function toggleLike() {
       likeCount: post.value.likeCount + (wasLiked ? 1 : -1),
     }
     emit('saved', error instanceof Error ? error.message : '좋아요 처리에 실패했습니다.')
-  }
-}
-
-async function toggleBookmark() {
-  if (!post.value || bookmarking.value) return
-  if (!props.accessToken) {
-    emit('saved', '로그인 후 게시글을 찜할 수 있습니다.')
-    emit('change', 'login')
-    return
-  }
-
-  const wasBookmarked = post.value.bookmarkedByMe
-  bookmarking.value = true
-  post.value = { ...post.value, bookmarkedByMe: !wasBookmarked }
-  try {
-    if (wasBookmarked) {
-      await unbookmarkCommunityPost(post.value.postId, props.accessToken)
-    } else {
-      await bookmarkCommunityPost(post.value.postId, props.accessToken)
-    }
-  } catch (error) {
-    post.value = { ...post.value, bookmarkedByMe: wasBookmarked }
-    emit('saved', error instanceof Error ? error.message : '찜 처리에 실패했습니다.')
-  } finally {
-    bookmarking.value = false
   }
 }
 
@@ -375,18 +349,6 @@ onMounted(loadPost)
         >
           <Heart :size="16" :fill="post.likedByMe ? 'currentColor' : 'none'" />
           좋아요 {{ post.likeCount }}
-        </button>
-        <button
-          data-testid="detail-bookmark"
-          class="inline-flex items-center gap-2 rounded-full border border-brand-200 px-5 py-3 text-sm font-black text-brand-600 transition hover:bg-brand-50 disabled:cursor-wait disabled:opacity-60"
-          :class="post.bookmarkedByMe ? 'bg-brand-500 text-white hover:bg-brand-600' : 'bg-white'"
-          type="button"
-          :aria-pressed="post.bookmarkedByMe"
-          :disabled="bookmarking"
-          @click="toggleBookmark"
-        >
-          <Bookmark :size="16" :fill="post.bookmarkedByMe ? 'currentColor' : 'none'" />
-          {{ post.bookmarkedByMe ? '찜 해제' : '찜하기' }}
         </button>
       </div>
 

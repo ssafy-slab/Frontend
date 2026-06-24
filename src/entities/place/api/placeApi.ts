@@ -1,5 +1,6 @@
 import type { Place } from '@/entities/travel/model/travel'
 import { apiBaseUrl } from '@/shared/lib/apiBaseUrl'
+import { authenticatedFetch } from '@/shared/lib/authenticatedFetch'
 
 export type PlaceCategory = {
   value: string
@@ -119,6 +120,7 @@ type PlaceApiItem = {
   detailImageUrl: string | null
   averageRating: number | string | null
   reviewCount: number | string | null
+  likedByMe: boolean
 }
 
 type PlacePageApiResponse = {
@@ -134,6 +136,23 @@ export type PlacePage = Omit<PlacePageApiResponse, 'content'> & {
 }
 
 export const defaultPlaceImage = '/images/default-place.svg'
+export const fallbackPlaceImages = [
+  'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=75',
+  'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=900&q=75',
+  'https://images.unsplash.com/photo-1506816561089-5cc37b3aa9b0?auto=format&fit=crop&w=900&q=75',
+  'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=900&q=75',
+]
+
+export function resolvePlaceDisplayImage(place: Place, detail = false) {
+  const candidates = [place.detailImage, place.thumbnailImage, place.image]
+  const hasActualImage = candidates.some((image) =>
+    Boolean(image && image !== defaultPlaceImage && !image.endsWith(defaultPlaceImage)),
+  )
+  if (hasActualImage) {
+    return detail ? place.detailImage || place.image : place.thumbnailImage || place.image
+  }
+  return fallbackPlaceImages[Math.abs(place.id) % fallbackPlaceImages.length]
+}
 
 function buildUrl(path: string, params?: Record<string, string | number | undefined>) {
   const url = new URL(path, apiBaseUrl)
@@ -145,8 +164,8 @@ function buildUrl(path: string, params?: Record<string, string | number | undefi
   return url.toString()
 }
 
-async function requestJson<T>(url: string): Promise<T> {
-  const response = await fetch(url)
+async function requestJson<T>(url: string, token?: string): Promise<T> {
+  const response = await authenticatedFetch(url, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined)
   if (!response.ok) {
     throw new Error(`API 요청에 실패했습니다. (${response.status})`)
   }
@@ -180,6 +199,7 @@ function toPlace(item: PlaceApiItem): Place {
     detailImage,
     rating: toNumber(item.averageRating, 0),
     reviewCount: String(toNumber(item.reviewCount, 0)),
+    liked: item.likedByMe,
     tags: [displayCategory(item.category), item.regionName].filter(Boolean),
     marker: { top: '50%', left: '50%' },
     coordinates: {
@@ -193,16 +213,40 @@ function toPlace(item: PlaceApiItem): Place {
   }
 }
 
-export async function fetchPlaces(params: PlaceSearchParams): Promise<PlacePage> {
-  const data = await requestJson<PlacePageApiResponse>(buildUrl('/api/places', params))
+export async function fetchPlaces(params: PlaceSearchParams, token?: string): Promise<PlacePage> {
+  const data = await requestJson<PlacePageApiResponse>(buildUrl('/api/places', params), token)
   return {
     ...data,
     content: data.content.map(toPlace),
   }
 }
 
-export async function fetchPlace(placeId: number): Promise<Place> {
-  return toPlace(await requestJson<PlaceApiItem>(buildUrl(`/api/places/${placeId}`)))
+export async function fetchPlace(placeId: number, token?: string): Promise<Place> {
+  return toPlace(await requestJson<PlaceApiItem>(buildUrl(`/api/places/${placeId}`), token))
+}
+
+export async function likePlace(placeId: number, token: string) {
+  const response = await authenticatedFetch(buildUrl(`/api/places/${placeId}/like`), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) throw new Error(`여행지 좋아요 처리에 실패했습니다. (${response.status})`)
+}
+
+export async function unlikePlace(placeId: number, token: string) {
+  const response = await authenticatedFetch(buildUrl(`/api/places/${placeId}/like`), {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) throw new Error(`여행지 좋아요 해제에 실패했습니다. (${response.status})`)
+}
+
+export async function fetchMyLikedPlaces(token: string, page = 0, size = 20): Promise<Place[]> {
+  const data = await requestJson<PlaceApiItem[]>(
+    buildUrl('/api/users/me/liked-places', { page: Math.max(0, page), size: Math.min(50, Math.max(1, size)) }),
+    token,
+  )
+  return data.map(toPlace)
 }
 
 export async function fetchPlaceFilters(): Promise<PlaceFilters> {

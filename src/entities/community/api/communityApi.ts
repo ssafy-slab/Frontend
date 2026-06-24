@@ -19,7 +19,6 @@ export type CommunityPostSummary = {
   createdAt: string
   updatedAt: string
   likedByMe: boolean
-  bookmarkedByMe: boolean
   mine: boolean
 }
 
@@ -170,11 +169,11 @@ export function fetchCommunityPost(postId: number, token?: string) {
   })
 }
 
-export function fetchMyBookmarkedCommunityPosts(token: string, page = 0, size = 20) {
+export function fetchMyLikedCommunityPosts(token: string, page = 0, size = 20) {
   const boundedPage = Math.max(0, page)
   const boundedSize = Math.min(50, Math.max(1, size))
   return requestJson<CommunityPostSummary[]>(
-    buildUrl('/api/users/me/bookmarked-community-posts', {
+    buildUrl('/api/users/me/liked-community-posts', {
       page: boundedPage,
       size: boundedSize,
     }),
@@ -221,7 +220,7 @@ export function uploadCommunityImage(token: string, file: File) {
   })
 }
 
-export async function toggleCommunityPostLike(postId: number, token: string) {
+export async function likeCommunityPost(postId: number, token: string) {
   const response = await authenticatedFetch(buildUrl(`/api/community/posts/${postId}/like`), {
     method: 'POST',
     headers: authHeaders(token),
@@ -232,18 +231,11 @@ export async function toggleCommunityPostLike(postId: number, token: string) {
   }
 }
 
-export function bookmarkCommunityPost(postId: number, token: string) {
-  return requestNoContent(buildUrl(`/api/community/posts/${postId}/bookmark`), {
-    method: 'POST',
-    headers: authHeaders(token),
-  }, '게시글 찜 추가')
-}
-
-export function unbookmarkCommunityPost(postId: number, token: string) {
-  return requestNoContent(buildUrl(`/api/community/posts/${postId}/bookmark`), {
+export function unlikeCommunityPost(postId: number, token: string) {
+  return requestNoContent(buildUrl(`/api/community/posts/${postId}/like`), {
     method: 'DELETE',
     headers: authHeaders(token),
-  }, '게시글 찜 해제')
+  }, '게시글 좋아요 해제')
 }
 
 export function fetchCommunityComments(postId: number, token?: string) {

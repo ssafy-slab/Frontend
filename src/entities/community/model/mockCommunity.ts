@@ -17,7 +17,6 @@ export const mockCommunityPosts: CommunityPostDetail[] = [
     createdAt: '2026-06-22T11:00:00',
     updatedAt: '2026-06-22T11:00:00',
     likedByMe: false,
-    bookmarkedByMe: false,
     mine: false,
     cells: [
       {
@@ -52,7 +51,6 @@ export const mockCommunityPosts: CommunityPostDetail[] = [
     createdAt: '2026-06-21T16:30:00',
     updatedAt: '2026-06-21T16:30:00',
     likedByMe: false,
-    bookmarkedByMe: false,
     mine: false,
     cells: [
       {
