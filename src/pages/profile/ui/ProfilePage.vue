@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
-import { CheckCircle2, Circle, Star, Trash2 } from 'lucide-vue-next'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { Bookmark, CheckCircle2, Circle, Heart, MessageCircle, Star, Trash2 } from 'lucide-vue-next'
 import type { AuthUser } from '@/entities/auth/api/authApi'
 import { getDisplayEmail } from '@/entities/auth/api/authApi'
+import {
+  fetchMyBookmarkedCommunityPosts,
+  resolveCommunityImageUrl,
+  unbookmarkCommunityPost,
+  type CommunityPostSummary,
+} from '@/entities/community/api/communityApi'
 import { deleteMyPlaceReview, fetchMyPlaceReviews } from '@/entities/review/api/reviewApi'
 import type { MyPlaceReview } from '@/entities/review/api/reviewApi'
 import { getPasswordChecks, isPasswordValid } from '@/shared/lib/password'
@@ -13,10 +19,11 @@ const emit = defineEmits<{
   change: [view: string]
   saved: [message: string]
   openPlace: [placeId: number]
+  openPost: [postId: number]
 }>()
 
 const authStore = useAuthStore()
-const activeTab = ref<'profile' | 'password' | 'reviews'>('profile')
+const activeTab = ref<'profile' | 'password' | 'reviews' | 'bookmarks'>('profile')
 const nickname = ref(props.currentUser?.nickname ?? '')
 const errorMessage = ref('')
 const isSaving = ref(false)
@@ -28,6 +35,12 @@ const reviewTotalPages = ref(0)
 const isReviewsLoading = ref(false)
 const deletingReviewId = ref<number | null>(null)
 const reviewErrorMessage = ref('')
+const bookmarkedPosts = ref<CommunityPostSummary[]>([])
+const bookmarkPage = ref(0)
+const bookmarkPageSize = 20
+const isBookmarksLoading = ref(false)
+const bookmarkErrorMessage = ref('')
+const removingBookmarkIds = ref<number[]>([])
 const displayEmail = computed(() => getDisplayEmail(props.currentUser?.email))
 const passwordForm = reactive({ currentPassword: '', newPassword: '', passwordConfirm: '' })
 const passwordChecks = computed(() => getPasswordChecks(passwordForm.newPassword))
@@ -36,10 +49,43 @@ watch(() => props.currentUser?.nickname, (value) => {
   nickname.value = value ?? ''
 })
 
-async function selectTab(tab: 'profile' | 'password' | 'reviews') {
+async function selectTab(tab: 'profile' | 'password' | 'reviews' | 'bookmarks') {
   activeTab.value = tab
   errorMessage.value = ''
   if (tab === 'reviews') await loadMyReviews()
+}
+
+async function loadBookmarkedPosts(page = bookmarkPage.value) {
+  if (!authStore.accessToken) return
+  isBookmarksLoading.value = true
+  bookmarkErrorMessage.value = ''
+  try {
+    bookmarkedPosts.value = await fetchMyBookmarkedCommunityPosts(authStore.accessToken, page, bookmarkPageSize)
+    bookmarkPage.value = page
+  } catch (error) {
+    bookmarkErrorMessage.value = error instanceof Error ? error.message : '찜한 게시글을 불러오지 못했습니다.'
+  } finally {
+    isBookmarksLoading.value = false
+  }
+}
+
+async function removeBookmark(item: CommunityPostSummary) {
+  if (!authStore.accessToken || removingBookmarkIds.value.includes(item.postId)) return
+  const index = bookmarkedPosts.value.findIndex((post) => post.postId === item.postId)
+  removingBookmarkIds.value = [...removingBookmarkIds.value, item.postId]
+  bookmarkedPosts.value = bookmarkedPosts.value.filter((post) => post.postId !== item.postId)
+  try {
+    await unbookmarkCommunityPost(item.postId, authStore.accessToken)
+  } catch (error) {
+    bookmarkedPosts.value.splice(Math.max(0, index), 0, item)
+    emit('saved', error instanceof Error ? error.message : '찜 해제에 실패했습니다.')
+  } finally {
+    removingBookmarkIds.value = removingBookmarkIds.value.filter((postId) => postId !== item.postId)
+  }
+}
+
+function bookmarkedPostImage(imageUrl: string | null) {
+  return imageUrl ? resolveCommunityImageUrl(imageUrl) : '/images/default-place.svg'
 }
 
 async function loadMyReviews(page = reviewPage.value) {
@@ -149,6 +195,10 @@ async function deleteAccount() {
     isDeleting.value = false
   }
 }
+
+onMounted(() => {
+  void loadBookmarkedPosts(0)
+})
 </script>
 
 <template>
@@ -178,6 +228,9 @@ async function deleteAccount() {
           </button>
           <button data-tab="reviews" class="px-4 py-3 text-sm font-black" :class="activeTab === 'reviews' ? 'border-b-2 border-brand-500 text-brand-600' : 'text-slate-500'" @click="selectTab('reviews')">
             내 리뷰
+          </button>
+          <button data-tab="bookmarks" class="px-4 py-3 text-sm font-black" :class="activeTab === 'bookmarks' ? 'border-b-2 border-brand-500 text-brand-600' : 'text-slate-500'" @click="selectTab('bookmarks')">
+            찜한 게시글
           </button>
         </div>
 
@@ -225,7 +278,7 @@ async function deleteAccount() {
           </form>
         </div>
 
-        <div v-else class="mt-5">
+        <div v-else-if="activeTab === 'reviews'" class="mt-5">
           <div class="mb-4 flex items-center justify-between gap-3">
             <div>
               <h2 class="text-lg font-black text-slate-950">내가 작성한 리뷰</h2>
@@ -300,9 +353,73 @@ async function deleteAccount() {
           </nav>
         </div>
 
+        <div v-else class="mt-5">
+          <div class="mb-4">
+            <h2 class="text-lg font-black text-slate-950">찜한 게시글</h2>
+            <p class="mt-1 text-sm font-semibold text-slate-500">나중에 다시 보고 싶은 여행 이야기를 모아봤어요.</p>
+          </div>
+
+          <p v-if="isBookmarksLoading" class="rounded-xl bg-slate-50 py-12 text-center text-sm font-bold text-slate-400">
+            찜한 게시글을 불러오는 중입니다.
+          </p>
+          <p v-else-if="bookmarkErrorMessage" class="rounded-xl bg-red-50 px-4 py-5 text-sm font-bold text-red-600">
+            {{ bookmarkErrorMessage }}
+          </p>
+          <div v-else-if="bookmarkedPosts.length" class="space-y-3">
+            <article
+              v-for="item in bookmarkedPosts"
+              :key="item.postId"
+              :data-testid="`bookmarked-post-${item.postId}`"
+              role="link"
+              tabindex="0"
+              class="grid cursor-pointer gap-4 rounded-xl p-3 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-200 sm:grid-cols-[160px_minmax(0,1fr)] sm:p-4"
+              @click="emit('openPost', item.postId)"
+              @keyup.enter="emit('openPost', item.postId)"
+            >
+              <img :src="bookmarkedPostImage(item.imageUrl)" :alt="item.title" class="h-40 w-full rounded-lg object-cover" />
+              <div class="flex min-w-0 flex-col py-1">
+                <p class="text-xs font-black text-brand-500">{{ item.category }}</p>
+                <h3 class="mt-1 line-clamp-2 text-lg font-black text-slate-950">{{ item.title }}</h3>
+                <p v-if="item.excerpt" class="mt-2 line-clamp-2 text-sm leading-6 text-slate-600">{{ item.excerpt }}</p>
+                <div class="mt-auto flex items-center justify-between gap-3 pt-4">
+                  <span class="flex items-center gap-3 text-xs font-bold text-slate-500">
+                    <span class="inline-flex items-center gap-1"><Heart :size="14" />{{ item.likeCount }}</span>
+                    <span class="inline-flex items-center gap-1"><MessageCircle :size="14" />{{ item.commentCount }}</span>
+                  </span>
+                  <button
+                    :data-testid="`remove-bookmark-${item.postId}`"
+                    class="inline-flex items-center gap-1 rounded-lg bg-brand-50 px-3 py-2 text-xs font-black text-brand-600 disabled:cursor-wait disabled:opacity-50"
+                    type="button"
+                    :disabled="removingBookmarkIds.includes(item.postId)"
+                    @click.stop="removeBookmark(item)"
+                  >
+                    <Bookmark :size="14" fill="currentColor" />
+                    찜 해제
+                  </button>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div v-else class="rounded-xl bg-slate-50 py-12 text-center">
+            <Bookmark :size="28" class="mx-auto text-slate-300" />
+            <p class="mt-3 text-sm font-black text-slate-600">찜한 게시글이 없습니다</p>
+            <button class="mt-3 text-sm font-black text-brand-500 hover:text-brand-600" @click="emit('change', 'community')">커뮤니티 둘러보기</button>
+          </div>
+
+          <nav class="mt-6 flex items-center justify-center gap-2" aria-label="찜한 게시글 페이지">
+            <button class="h-8 rounded-md px-3 text-xs font-black text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-35" :disabled="bookmarkPage === 0 || isBookmarksLoading" @click="loadBookmarkedPosts(bookmarkPage - 1)">
+              이전
+            </button>
+            <span class="px-2 text-xs font-black text-slate-600">{{ bookmarkPage + 1 }}</span>
+            <button class="h-8 rounded-md px-3 text-xs font-black text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-35" :disabled="bookmarkedPosts.length < bookmarkPageSize || isBookmarksLoading" @click="loadBookmarkedPosts(bookmarkPage + 1)">
+              다음
+            </button>
+          </nav>
+        </div>
+
         <p v-if="errorMessage" class="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-600">{{ errorMessage }}</p>
 
-        <div v-if="activeTab !== 'reviews'" class="mt-7 border-t border-slate-200 pt-5">
+        <div v-if="activeTab === 'profile' || activeTab === 'password'" class="mt-7 border-t border-slate-200 pt-5">
           <button class="h-10 rounded-lg px-4 text-sm font-black text-red-600 hover:bg-red-50 disabled:opacity-60" :disabled="!currentUser || isDeleting" @click="deleteAccount">
             {{ isDeleting ? '탈퇴 처리 중...' : '회원 탈퇴' }}
           </button>

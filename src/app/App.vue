@@ -210,7 +210,7 @@ watch(activeView, (view) => {
         @deleted="handleCommunityPostDeleted"
         @saved="showToast"
       />
-      <ProfilePage v-else-if="activeView === 'profile'" key="profile" :current-user="currentUser" @change="changeView" @saved="showToast" @open-place="openPlaceById" />
+      <ProfilePage v-else-if="activeView === 'profile'" key="profile" :current-user="currentUser" @change="changeView" @saved="showToast" @open-place="openPlaceById" @open-post="openCommunityPost" />
       <ForgotPasswordPage v-else-if="activeView === 'forgot-password'" key="forgot-password" @change="changeView" />
       <AuthPage v-else key="auth" :mode="authMode" @change="changeView" @authenticated="handleLogin" />
     </Transition>

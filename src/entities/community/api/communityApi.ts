@@ -17,6 +17,7 @@ export type CommunityPostSummary = {
   createdAt: string
   updatedAt: string
   likedByMe: boolean
+  bookmarkedByMe: boolean
   mine: boolean
 }
 
@@ -140,6 +141,14 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
+async function requestNoContent(url: string, init: RequestInit, failureLabel: string) {
+  const response = await fetch(url, init)
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('로그인이 필요합니다.')
+    throw new Error(`${failureLabel}에 실패했습니다. (${response.status})`)
+  }
+}
+
 export function fetchCommunityPosts(params: CommunityPostSearchParams, token?: string) {
   return requestJson<CommunityPostSummary[]>(
     buildUrl('/api/community/posts', {
@@ -157,6 +166,18 @@ export function fetchCommunityPost(postId: number, token?: string) {
   return requestJson<CommunityPostDetail>(buildUrl(`/api/community/posts/${postId}`), {
     headers: authHeaders(token),
   })
+}
+
+export function fetchMyBookmarkedCommunityPosts(token: string, page = 0, size = 20) {
+  const boundedPage = Math.max(0, page)
+  const boundedSize = Math.min(50, Math.max(1, size))
+  return requestJson<CommunityPostSummary[]>(
+    buildUrl('/api/users/me/bookmarked-community-posts', {
+      page: boundedPage,
+      size: boundedSize,
+    }),
+    { headers: authHeaders(token) },
+  )
 }
 
 export function createCommunityPost(token: string, payload: CommunityPostPayload) {
@@ -207,6 +228,20 @@ export async function toggleCommunityPostLike(postId: number, token: string) {
     if (response.status === 401) throw new Error('로그인이 필요합니다.')
     throw new Error(`좋아요 처리에 실패했습니다. (${response.status})`)
   }
+}
+
+export function bookmarkCommunityPost(postId: number, token: string) {
+  return requestNoContent(buildUrl(`/api/community/posts/${postId}/bookmark`), {
+    method: 'POST',
+    headers: authHeaders(token),
+  }, '게시글 찜 추가')
+}
+
+export function unbookmarkCommunityPost(postId: number, token: string) {
+  return requestNoContent(buildUrl(`/api/community/posts/${postId}/bookmark`), {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  }, '게시글 찜 해제')
 }
 
 export function fetchCommunityComments(postId: number, token?: string) {

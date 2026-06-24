@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ScheduleDetailPage from './ScheduleDetailPage.vue'
 import type { Trip } from '@/entities/travel/model/travel'
+import { VoteRequestError } from '@/entities/travel/api/tripVoteApi'
 
 const { fetchChatMessages, getChatSocketUrl } = vi.hoisted(() => ({
   fetchChatMessages: vi.fn(),
@@ -197,6 +198,9 @@ function createVote(overrides: Record<string, unknown> = {}) {
     ],
     selectedOptionId: null,
     totalBallotCount: 1,
+    eligibleVoterCount: 3,
+    votedMemberCount: 1,
+    allMembersVoted: false,
     ...overrides,
   }
 }
@@ -232,8 +236,13 @@ describe('ScheduleDetailPage collaboration controls', () => {
     rejectAiAnalysisRun.mockResolvedValue([createAiSuggestion({ status: 'REJECTED' })])
     createAiSuggestionVote.mockResolvedValue(createVote())
     getTripVote.mockResolvedValue(createVote())
-    castTripVoteBallot.mockResolvedValue(createVote({ selectedOptionId: 501, totalBallotCount: 2 }))
-    closeTripVote.mockResolvedValue(createVote({ status: 'CLOSED', endedAt: '2026-06-24T11:00:00' }))
+    castTripVoteBallot.mockResolvedValue(createVote({ selectedOptionId: 501, totalBallotCount: 2, votedMemberCount: 2 }))
+    closeTripVote.mockResolvedValue(createVote({
+      status: 'CLOSED',
+      endedAt: '2026-06-24T11:00:00',
+      votedMemberCount: 3,
+      allMembersVoted: true,
+    }))
     fetchPlaces.mockResolvedValue({
       content: [
         {
@@ -988,7 +997,7 @@ describe('ScheduleDetailPage collaboration controls', () => {
     expect(rejectedStatus.classes()).toEqual(expect.arrayContaining(['inline-flex', 'min-h-8', 'items-center', 'justify-center']))
   })
 
-  it('opens a voting suggestion, casts a ballot, and lets an editor close it', async () => {
+  it('shows team vote progress and prevents closing before every member votes', async () => {
     getAiSuggestions.mockResolvedValueOnce([
       createAiSuggestion({ status: 'VOTING', voteId: 41 }),
     ])
@@ -1008,22 +1017,88 @@ describe('ScheduleDetailPage collaboration controls', () => {
 
     expect(getTripVote).toHaveBeenCalledWith('token', 1, 41)
     expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('찬성')
+    expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('투표 완료 1/3')
+    expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('모든 팀원이 투표하면 종료됩니다.')
+    expect(wrapper.get('[data-testid="close-ai-vote"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('automatically closes and refreshes an AI vote after the final editor ballot', async () => {
+    getAiSuggestions.mockResolvedValueOnce([
+      createAiSuggestion({ status: 'VOTING', voteId: 41 }),
+    ])
+    castTripVoteBallot.mockResolvedValueOnce(createVote({
+      selectedOptionId: 501,
+      totalBallotCount: 3,
+      votedMemberCount: 3,
+      allMembersVoted: true,
+    }))
+    getTripVote
+      .mockResolvedValueOnce(createVote())
+      .mockResolvedValueOnce(createVote({
+        status: 'CLOSED',
+        endedAt: '2026-06-24T11:00:00',
+        totalBallotCount: 3,
+        votedMemberCount: 3,
+        allMembersVoted: true,
+      }))
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+        currentUser: { userId: 20, email: 'editor@test.com', nickname: 'editor', role: 'USER', localAccount: true },
+      },
+      global: { stubs: { Transition: false } },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-ai-vote-31"]').trigger('click')
+    await flushPromises()
     await wrapper.get('[data-testid="cast-vote-option-501"]').trigger('click')
     await flushPromises()
 
     expect(castTripVoteBallot).toHaveBeenCalledWith('token', 1, 41, 501)
-    await wrapper.get('[data-testid="close-ai-vote"]').trigger('click')
-    await flushPromises()
-    await new Promise((resolve) => setTimeout(resolve, 250))
-
     expect(closeTripVote).toHaveBeenCalledWith('token', 1, 41)
     expect(getAiSuggestions).toHaveBeenCalled()
     expect(fetchTripSchedules).toHaveBeenCalledTimes(2)
-    expect(wrapper.find('[data-testid="ai-vote-modal"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('투표 종료')
+  })
+
+  it('does not automatically close after the final ballot when the user cannot edit the trip', async () => {
+    getAiSuggestions.mockResolvedValueOnce([
+      createAiSuggestion({ status: 'VOTING', voteId: 41 }),
+    ])
+    castTripVoteBallot.mockResolvedValueOnce(createVote({
+      selectedOptionId: 501,
+      totalBallotCount: 3,
+      votedMemberCount: 3,
+      allMembersVoted: true,
+    }))
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+        currentUser: { userId: 30, email: 'viewer@test.com', nickname: 'viewer', role: 'USER', localAccount: true },
+      },
+      global: { stubs: { Transition: false } },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-ai-vote-31"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="cast-vote-option-501"]').trigger('click')
+    await flushPromises()
+
+    expect(closeTripVote).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('투표 완료 3/3')
   })
 
   it('keeps a vote open when closing fails with a schedule conflict', async () => {
-    closeTripVote.mockRejectedValueOnce(new Error('투표 또는 제안 상태가 변경되었거나 일정 시간이 충돌합니다. 최신 상태를 확인해 주세요.'))
+    closeTripVote.mockRejectedValueOnce(new VoteRequestError(
+      409,
+      '투표 또는 제안 상태가 변경되었거나 일정 시간이 충돌합니다. 최신 상태를 확인해 주세요.',
+      'Schedule time conflicts with an existing item',
+    ))
+    getTripVote.mockResolvedValue(createVote({ votedMemberCount: 3, allMembersVoted: true }))
     getAiSuggestions.mockResolvedValueOnce([
       createAiSuggestion({ status: 'VOTING', voteId: 41 }),
     ])
@@ -1045,6 +1120,83 @@ describe('ScheduleDetailPage collaboration controls', () => {
     expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('일정 시간이 충돌합니다')
     expect(wrapper.find('[data-testid="close-ai-vote"]').exists()).toBe(true)
     expect(fetchTripSchedules).toHaveBeenCalledTimes(1)
+  })
+
+  it('recovers without a failure toast when another client already closed the vote', async () => {
+    closeTripVote.mockRejectedValueOnce(new VoteRequestError(
+      409,
+      '투표 또는 제안 상태가 변경되었거나 일정 시간이 충돌합니다. 최신 상태를 확인해 주세요.',
+      'Vote is already closed',
+    ))
+    getTripVote
+      .mockResolvedValueOnce(createVote({ votedMemberCount: 3, allMembersVoted: true }))
+      .mockResolvedValueOnce(createVote({
+        status: 'CLOSED',
+        endedAt: '2026-06-24T11:00:00',
+        votedMemberCount: 3,
+        allMembersVoted: true,
+      }))
+    getAiSuggestions.mockResolvedValueOnce([
+      createAiSuggestion({ status: 'VOTING', voteId: 41 }),
+    ])
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+        currentUser: { userId: 10, email: 'owner@test.com', nickname: 'owner', role: 'USER', localAccount: true },
+      },
+      global: { stubs: { Transition: false } },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-ai-vote-31"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="close-ai-vote"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('투표 종료')
+    expect(fetchTripSchedules).toHaveBeenCalledTimes(2)
+    expect(wrapper.emitted('saved') ?? []).not.toContainEqual([
+      '투표 또는 제안 상태가 변경되었거나 일정 시간이 충돌합니다. 최신 상태를 확인해 주세요.',
+    ])
+  })
+
+  it('reloads and keeps the vote open when the server says members are still missing', async () => {
+    castTripVoteBallot.mockResolvedValueOnce(createVote({
+      selectedOptionId: 501,
+      totalBallotCount: 3,
+      votedMemberCount: 3,
+      allMembersVoted: true,
+    }))
+    closeTripVote.mockRejectedValueOnce(new VoteRequestError(
+      409,
+      '투표 또는 제안 상태가 변경되었거나 일정 시간이 충돌합니다. 최신 상태를 확인해 주세요.',
+      'All trip members must vote before closing',
+    ))
+    getTripVote
+      .mockResolvedValueOnce(createVote())
+      .mockResolvedValueOnce(createVote({ votedMemberCount: 2, allMembersVoted: false }))
+    getAiSuggestions.mockResolvedValueOnce([
+      createAiSuggestion({ status: 'VOTING', voteId: 41 }),
+    ])
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+        currentUser: { userId: 10, email: 'owner@test.com', nickname: 'owner', role: 'USER', localAccount: true },
+      },
+      global: { stubs: { Transition: false } },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-ai-vote-31"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="cast-vote-option-501"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('투표 완료 2/3')
+    expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('모든 팀원이 투표하면 종료됩니다.')
+    expect(wrapper.get('[data-testid="close-ai-vote"]').attributes('disabled')).toBeDefined()
   })
 
   it('loads schedule items for the trip', async () => {

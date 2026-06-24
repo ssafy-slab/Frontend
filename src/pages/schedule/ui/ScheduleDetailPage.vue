@@ -8,7 +8,7 @@ import type { AiAnalysisNoResultReason, ChatMessageResponse, ChatSocketMessage }
 import { fetchPlaces } from '@/entities/place/api/placeApi'
 import { analyzeTripChat, applyAiAnalysisRun, applyAiSuggestion, getAiSuggestions, rejectAiAnalysisRun, rejectAiSuggestion } from '@/entities/travel/api/tripAiApi'
 import type { AiSuggestion, AiSuggestionStatus } from '@/entities/travel/api/tripAiApi'
-import { castTripVoteBallot, closeTripVote, createAiSuggestionVote, getTripVote } from '@/entities/travel/api/tripVoteApi'
+import { castTripVoteBallot, closeTripVote, createAiSuggestionVote, getTripVote, VoteRequestError } from '@/entities/travel/api/tripVoteApi'
 import type { VoteResponse } from '@/entities/travel/api/tripVoteApi'
 import { createChecklistItem, createInviteCode, createTripSchedule, deleteChecklistItem, deleteScheduleItem, fetchChecklistItems, fetchTripMembers, fetchTripSchedules, updateTripMemberRole, updateTripSchedule } from '@/entities/travel/api/tripApi'
 import type { ChecklistItemResponse, TripMemberResponse, TripMemberRole, TripSchedulePayload, TripScheduleResponse } from '@/entities/travel/api/tripApi'
@@ -731,16 +731,20 @@ async function openSuggestionVote(suggestion: AiSuggestion) {
 }
 
 async function castVote(voteOptionId: number) {
-  if (!props.accessToken || !props.trip?.id || !activeVote.value || isCastingVote.value) return
+  if (!props.accessToken || !props.trip?.id || !activeVote.value || isCastingVote.value || isClosingVote.value) return
   isCastingVote.value = true
   voteError.value = ''
   try {
-    activeVote.value = await castTripVoteBallot(
+    const updatedVote = await castTripVoteBallot(
       props.accessToken,
       props.trip.id,
       activeVote.value.voteId,
       voteOptionId,
     )
+    activeVote.value = updatedVote
+    if (updatedVote.status === 'OPEN' && updatedVote.allMembersVoted && canCloseVotes.value) {
+      await closeVoteAndRefresh(updatedVote.voteId)
+    }
   } catch (error) {
     voteError.value = error instanceof Error ? error.message : '투표에 참여하지 못했습니다.'
   } finally {
@@ -748,21 +752,53 @@ async function castVote(voteOptionId: number) {
   }
 }
 
-async function closeVote() {
-  if (!props.accessToken || !props.trip?.id || !activeVote.value || isClosingVote.value || !canCloseVotes.value) return
+function isAllMembersRequiredError(error: VoteRequestError) {
+  return error.serverMessage.toLowerCase().includes('all trip members must vote')
+}
+
+async function refreshClosedVoteData(voteId: number) {
+  if (!props.accessToken || !props.trip?.id) return
+  const refreshedVote = await getTripVote(props.accessToken, props.trip.id, voteId)
+  activeVote.value = refreshedVote
+  await Promise.all([loadAiSuggestions(selectedStatus.value), loadScheduleItems()])
+}
+
+async function closeVoteAndRefresh(voteId: number) {
+  if (!props.accessToken || !props.trip?.id || isClosingVote.value || !canCloseVotes.value) return
   isClosingVote.value = true
   voteError.value = ''
   try {
-    await closeTripVote(props.accessToken, props.trip.id, activeVote.value.voteId)
-    activeVote.value = null
-    await Promise.all([loadAiSuggestions(selectedStatus.value), loadScheduleItems()])
+    await closeTripVote(props.accessToken, props.trip.id, voteId)
+    await refreshClosedVoteData(voteId)
     emit('saved', '투표를 종료하고 결과를 반영했습니다.')
   } catch (error) {
+    if (error instanceof VoteRequestError && error.status === 409) {
+      try {
+        const refreshedVote = await getTripVote(props.accessToken, props.trip.id, voteId)
+        activeVote.value = refreshedVote
+        if (refreshedVote.status === 'CLOSED') {
+          await Promise.all([loadAiSuggestions(selectedStatus.value), loadScheduleItems()])
+          emit('saved', '투표 종료 결과를 반영했습니다.')
+          return
+        }
+        if (isAllMembersRequiredError(error) || !refreshedVote.allMembersVoted) {
+          voteError.value = ''
+          return
+        }
+      } catch {
+        // The original close error remains the most useful message.
+      }
+    }
     voteError.value = error instanceof Error ? error.message : '투표를 종료하지 못했습니다.'
     emit('saved', voteError.value)
   } finally {
     isClosingVote.value = false
   }
+}
+
+async function closeVote() {
+  if (!activeVote.value || !activeVote.value.allMembersVoted) return
+  await closeVoteAndRefresh(activeVote.value.voteId)
 }
 
 async function processAnalysisRun(analysisRunId: number, action: 'apply' | 'reject') {
@@ -1791,7 +1827,10 @@ onBeforeUnmount(closeChatSocket)
             <div>
               <p class="text-xs font-black text-brand-500">팀 일정 투표</p>
               <h2 class="mt-1 text-xl font-black text-slate-950">{{ activeVote.title }}</h2>
-              <p class="mt-1 text-xs font-semibold text-slate-500">총 {{ activeVote.totalBallotCount }}표</p>
+              <p class="mt-1 text-xs font-semibold text-slate-500">
+                투표 완료 {{ activeVote.votedMemberCount }}/{{ activeVote.eligibleVoterCount }}
+                · 총 {{ activeVote.totalBallotCount }}표
+              </p>
             </div>
             <button class="text-slate-500" aria-label="투표 닫기" @click="activeVote = null; voteError = ''">
               <X :size="22" />
@@ -1809,7 +1848,7 @@ onBeforeUnmount(closeChatSocket)
               :data-testid="`cast-vote-option-${option.voteOptionId}`"
               class="flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60"
               :class="activeVote.selectedOptionId === option.voteOptionId ? 'border-brand-500 bg-brand-50' : 'border-slate-200 bg-white hover:border-brand-200'"
-              :disabled="isCastingVote || activeVote.status !== 'OPEN'"
+              :disabled="isCastingVote || isClosingVote || activeVote.status !== 'OPEN'"
               @click="castVote(option.voteOptionId)"
             >
               <span>
@@ -1820,6 +1859,13 @@ onBeforeUnmount(closeChatSocket)
             </button>
           </div>
 
+          <p
+            v-if="activeVote.status === 'OPEN' && !activeVote.allMembersVoted"
+            class="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700"
+          >
+            모든 팀원이 투표하면 종료됩니다.
+          </p>
+
           <div class="mt-5 flex items-center justify-between gap-2">
             <span class="text-xs font-black" :class="activeVote.status === 'OPEN' ? 'text-amber-600' : 'text-slate-500'">
               {{ activeVote.status === 'OPEN' ? '투표 진행 중' : '투표 종료' }}
@@ -1828,7 +1874,7 @@ onBeforeUnmount(closeChatSocket)
               v-if="canCloseVotes && activeVote.status === 'OPEN'"
               data-testid="close-ai-vote"
               class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-black text-white disabled:opacity-50"
-              :disabled="isClosingVote"
+              :disabled="isClosingVote || isCastingVote || !activeVote.allMembersVoted"
               @click="closeVote"
             >
               {{ isClosingVote ? '종료 중' : '투표 종료' }}

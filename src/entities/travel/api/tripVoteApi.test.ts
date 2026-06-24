@@ -4,6 +4,7 @@ import {
   closeTripVote,
   createAiSuggestionVote,
   getTripVote,
+  VoteRequestError,
 } from './tripVoteApi'
 
 const vote = {
@@ -20,6 +21,9 @@ const vote = {
   ],
   selectedOptionId: null,
   totalBallotCount: 1,
+  eligibleVoterCount: 3,
+  votedMemberCount: 1,
+  allMembersVoted: false,
 }
 
 afterEach(() => {
@@ -69,5 +73,22 @@ describe('tripVoteApi', () => {
       expect.stringContaining('/api/trips/1/votes/41/close'),
       expect.objectContaining({ method: 'PATCH' }),
     )
+  })
+
+  it('preserves the backend conflict reason for close recovery decisions', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ message: 'All trip members must vote before closing' }),
+        { status: 409, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+
+    const error = await closeTripVote('token', 1, 41).catch((caught) => caught)
+
+    expect(error).toBeInstanceOf(VoteRequestError)
+    expect(error).toMatchObject({
+      status: 409,
+      serverMessage: 'All trip members must vote before closing',
+    })
   })
 })

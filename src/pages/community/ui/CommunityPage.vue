@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ChevronDown, Edit3, Globe2, Heart, MessageCircle, Search, SlidersHorizontal, User } from 'lucide-vue-next'
+import { Bookmark, ChevronDown, Edit3, Globe2, Heart, MessageCircle, Search, SlidersHorizontal, User } from 'lucide-vue-next'
 import {
+  bookmarkCommunityPost,
   fetchCommunityPosts,
   resolveCommunityImageUrl,
+  unbookmarkCommunityPost,
   type CommunityPostSummary,
   type CommunitySort,
 } from '@/entities/community/api/communityApi'
@@ -38,6 +40,7 @@ const query = ref('')
 const posts = ref<CommunityPostSummary[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
+const bookmarkingPostIds = ref<number[]>([])
 const sortOpen = ref(false)
 const sortMenuRef = ref<HTMLElement | null>(null)
 const fallbackImage = '/images/default-place.svg'
@@ -119,6 +122,31 @@ function openWrite() {
     return
   }
   emit('change', 'community-write')
+}
+
+async function toggleBookmark(post: CommunityPostSummary) {
+  if (!props.accessToken) {
+    emit('saved', '로그인 후 게시글을 찜할 수 있습니다.')
+    emit('change', 'login')
+    return
+  }
+  if (bookmarkingPostIds.value.includes(post.postId)) return
+
+  const wasBookmarked = post.bookmarkedByMe
+  bookmarkingPostIds.value = [...bookmarkingPostIds.value, post.postId]
+  post.bookmarkedByMe = !wasBookmarked
+  try {
+    if (wasBookmarked) {
+      await unbookmarkCommunityPost(post.postId, props.accessToken)
+    } else {
+      await bookmarkCommunityPost(post.postId, props.accessToken)
+    }
+  } catch (error) {
+    post.bookmarkedByMe = wasBookmarked
+    emit('saved', error instanceof Error ? error.message : '찜 처리에 실패했습니다.')
+  } finally {
+    bookmarkingPostIds.value = bookmarkingPostIds.value.filter((postId) => postId !== post.postId)
+  }
 }
 
 watch([selectedCategory, selectedSort], loadPosts)
@@ -221,8 +249,20 @@ onBeforeUnmount(() => {
         class="brand-card flex min-h-[330px] cursor-pointer flex-col overflow-hidden rounded-xl transition hover:-translate-y-0.5 hover:border-brand-500"
         @click="emit('openPost', post.postId)"
       >
-        <div data-testid="community-card-image" class="aspect-[16/9] w-full shrink-0 overflow-hidden bg-slate-100">
+        <div data-testid="community-card-image" class="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-slate-100">
           <img :src="postImageUrl(post.imageUrl)" :alt="post.title" class="h-full w-full object-cover" />
+          <button
+            :data-testid="`bookmark-post-${post.postId}`"
+            class="absolute right-3 top-3 grid size-10 place-items-center rounded-full bg-white/95 text-slate-600 shadow-md transition hover:text-brand-600 disabled:cursor-wait disabled:opacity-60"
+            :class="post.bookmarkedByMe ? 'text-brand-600' : ''"
+            type="button"
+            :aria-label="post.bookmarkedByMe ? '찜 해제' : '찜 추가'"
+            :aria-pressed="post.bookmarkedByMe"
+            :disabled="bookmarkingPostIds.includes(post.postId)"
+            @click.stop="toggleBookmark(post)"
+          >
+            <Bookmark :size="19" :fill="post.bookmarkedByMe ? 'currentColor' : 'none'" />
+          </button>
         </div>
         <div data-testid="community-card-body" class="flex flex-1 flex-col px-4 py-4">
           <p class="text-xs font-black text-brand-500">{{ categoryLabel(post.category) }}</p>

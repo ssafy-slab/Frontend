@@ -4,28 +4,34 @@ import CommunityDetailPage from './CommunityDetailPage.vue'
 import type { CommunityComment } from '@/entities/community/api/communityApi'
 
 const {
+  bookmarkCommunityPost,
   createCommunityComment,
   deleteCommunityComment,
   fetchCommunityComments,
   fetchCommunityPost,
   updateCommunityComment,
+  unbookmarkCommunityPost,
 } = vi.hoisted(() => ({
+  bookmarkCommunityPost: vi.fn(),
   createCommunityComment: vi.fn(),
   deleteCommunityComment: vi.fn(),
   fetchCommunityComments: vi.fn(),
   fetchCommunityPost: vi.fn(),
   updateCommunityComment: vi.fn(),
+  unbookmarkCommunityPost: vi.fn(),
 }))
 
 vi.mock('@/entities/community/api/communityApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/entities/community/api/communityApi')>()
   return {
     ...actual,
+    bookmarkCommunityPost,
     createCommunityComment,
     deleteCommunityComment,
     fetchCommunityComments,
     fetchCommunityPost,
     updateCommunityComment,
+    unbookmarkCommunityPost,
   }
 })
 
@@ -67,6 +73,7 @@ describe('CommunityDetailPage comments', () => {
       createdAt: '2026-06-24T09:00:00',
       updatedAt: '2026-06-24T09:00:00',
       likedByMe: false,
+      bookmarkedByMe: false,
       mine: false,
       cells: [],
     })
@@ -94,6 +101,29 @@ describe('CommunityDetailPage comments', () => {
     createCommunityComment.mockResolvedValue([])
     updateCommunityComment.mockResolvedValue([])
     deleteCommunityComment.mockResolvedValue(undefined)
+  })
+
+  it('keeps bookmark state separate from likes and rolls back failures', async () => {
+    bookmarkCommunityPost.mockResolvedValueOnce(undefined)
+    unbookmarkCommunityPost.mockRejectedValueOnce(new Error('찜 실패'))
+    const wrapper = mount(CommunityDetailPage, {
+      props: { postId: 3, accessToken: 'token' },
+      global: { stubs: { Transition: false } },
+    })
+    await flushPromises()
+
+    const button = wrapper.get('[data-testid="detail-bookmark"]')
+    await button.trigger('click')
+    await flushPromises()
+    expect(bookmarkCommunityPost).toHaveBeenCalledWith(3, 'token')
+    expect(button.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('.like-button').text()).toContain('0')
+
+    await button.trigger('click')
+    await flushPromises()
+    expect(unbookmarkCommunityPost).toHaveBeenCalledWith(3, 'token')
+    expect(button.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.emitted('saved')?.at(-1)).toEqual(['찜 실패'])
   })
 
   it('shows edit and delete only for my active comment', async () => {
@@ -126,6 +156,7 @@ describe('CommunityDetailPage comments', () => {
       createdAt: '2026-06-24T09:00:00',
       updatedAt: '2026-06-24T09:00:00',
       likedByMe: false,
+      bookmarkedByMe: false,
       mine: false,
       cells: [
         { postCellId: 1, sortOrder: 1, cellType: 'TEXT', textContent: 'First story', imageUrl: null, alignment: 'CENTER' },
@@ -165,6 +196,7 @@ describe('CommunityDetailPage comments', () => {
       createdAt: '2026-06-24T09:00:00',
       updatedAt: '2026-06-24T09:00:00',
       likedByMe: false,
+      bookmarkedByMe: false,
       mine: false,
       cells: [
         { postCellId: 1, sortOrder: 1, cellType: 'TEXT', textContent: 'First story', imageUrl: null, alignment: 'LEFT' },
@@ -218,6 +250,7 @@ describe('CommunityDetailPage comments', () => {
       createdAt: '2026-06-24T09:00:00',
       updatedAt: '2026-06-24T09:00:00',
       likedByMe: false,
+      bookmarkedByMe: false,
       mine: false,
       cells: [],
     })

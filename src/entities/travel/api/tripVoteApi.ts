@@ -22,6 +22,21 @@ export type VoteResponse = {
   options: VoteOptionResponse[]
   selectedOptionId: number | null
   totalBallotCount: number
+  eligibleVoterCount: number
+  votedMemberCount: number
+  allMembersVoted: boolean
+}
+
+export class VoteRequestError extends Error {
+  status: number
+  serverMessage: string
+
+  constructor(status: number, message: string, serverMessage = '') {
+    super(message)
+    this.name = 'VoteRequestError'
+    this.status = status
+    this.serverMessage = serverMessage
+  }
 }
 
 function getVoteErrorMessage(status: number) {
@@ -31,6 +46,19 @@ function getVoteErrorMessage(status: number) {
   if (status === 404) return '투표를 찾지 못했습니다.'
   if (status === 409) return '투표 또는 제안 상태가 변경되었거나 일정 시간이 충돌합니다. 최신 상태를 확인해 주세요.'
   return `투표 요청을 처리하지 못했습니다. (${status})`
+}
+
+async function readServerMessage(response: Response) {
+  const text = await response.text()
+  if (!text) return ''
+  try {
+    const parsed = JSON.parse(text) as { message?: unknown; error?: unknown }
+    if (typeof parsed.message === 'string') return parsed.message
+    if (typeof parsed.error === 'string') return parsed.error
+  } catch {
+    return text
+  }
+  return text
 }
 
 async function requestVote(path: string, token: string, options: RequestInit = {}) {
@@ -43,7 +71,13 @@ async function requestVote(path: string, token: string, options: RequestInit = {
     },
   })
 
-  if (!response.ok) throw new Error(getVoteErrorMessage(response.status))
+  if (!response.ok) {
+    throw new VoteRequestError(
+      response.status,
+      getVoteErrorMessage(response.status),
+      await readServerMessage(response),
+    )
+  }
   return response.json() as Promise<VoteResponse>
 }
 

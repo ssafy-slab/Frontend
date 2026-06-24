@@ -6,11 +6,24 @@ import ProfilePage from './ProfilePage.vue'
 const { fetchMyPlaceReviews } = vi.hoisted(() => ({
   fetchMyPlaceReviews: vi.fn(),
 }))
+const { fetchMyBookmarkedCommunityPosts, unbookmarkCommunityPost } = vi.hoisted(() => ({
+  fetchMyBookmarkedCommunityPosts: vi.fn(),
+  unbookmarkCommunityPost: vi.fn(),
+}))
 
 vi.mock('@/entities/review/api/reviewApi', () => ({
   fetchMyPlaceReviews,
   deleteMyPlaceReview: vi.fn(),
 }))
+
+vi.mock('@/entities/community/api/communityApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/entities/community/api/communityApi')>()
+  return {
+    ...actual,
+    fetchMyBookmarkedCommunityPosts,
+    unbookmarkCommunityPost,
+  }
+})
 
 describe('ProfilePage my reviews', () => {
   beforeEach(() => {
@@ -37,6 +50,26 @@ describe('ProfilePage my reviews', () => {
       size: 10,
       totalPages: 2,
     })
+    fetchMyBookmarkedCommunityPosts.mockReset().mockResolvedValue([{
+      postId: 12,
+      userId: 4,
+      authorNickname: 'writer',
+      placeId: null,
+      placeName: null,
+      category: 'TRAVEL_TIP',
+      title: '찜한 여행 팁',
+      excerpt: '좋은 글',
+      imageUrl: null,
+      likeCount: 3,
+      commentCount: 2,
+      viewCount: 10,
+      createdAt: '2026-06-24T00:00:00',
+      updatedAt: '2026-06-24T00:00:00',
+      likedByMe: false,
+      bookmarkedByMe: true,
+      mine: false,
+    }])
+    unbookmarkCommunityPost.mockReset().mockResolvedValue(undefined)
   })
 
   it('shows the current users reviews and opens the place', async () => {
@@ -55,5 +88,39 @@ describe('ProfilePage my reviews', () => {
     expect(wrapper.text()).toContain('다음')
     await wrapper.get('article[data-action="open-place"]').trigger('click')
     expect(wrapper.emitted('openPlace')?.[0]).toEqual([3])
+  })
+
+  it('loads bookmarks on profile entry, opens a post, and removes an unbookmarked item', async () => {
+    const wrapper = mount(ProfilePage, {
+      props: {
+        currentUser: { userId: 7, email: 'a@b.com', nickname: '여행자', role: 'USER', localAccount: true },
+      },
+    })
+    await flushPromises()
+
+    expect(fetchMyBookmarkedCommunityPosts).toHaveBeenCalledWith('token', 0, 20)
+    await wrapper.get('button[data-tab="bookmarks"]').trigger('click')
+    expect(wrapper.text()).toContain('찜한 여행 팁')
+
+    await wrapper.get('[data-testid="bookmarked-post-12"]').trigger('click')
+    expect(wrapper.emitted('openPost')?.[0]).toEqual([12])
+
+    await wrapper.get('[data-testid="remove-bookmark-12"]').trigger('click')
+    await flushPromises()
+    expect(unbookmarkCommunityPost).toHaveBeenCalledWith(12, 'token')
+    expect(wrapper.text()).toContain('찜한 게시글이 없습니다')
+  })
+
+  it('shows the bookmarked-post empty state', async () => {
+    fetchMyBookmarkedCommunityPosts.mockResolvedValueOnce([])
+    const wrapper = mount(ProfilePage, {
+      props: {
+        currentUser: { userId: 7, email: 'a@b.com', nickname: '여행자', role: 'USER', localAccount: true },
+      },
+    })
+    await flushPromises()
+    await wrapper.get('button[data-tab="bookmarks"]').trigger('click')
+
+    expect(wrapper.text()).toContain('찜한 게시글이 없습니다')
   })
 })
