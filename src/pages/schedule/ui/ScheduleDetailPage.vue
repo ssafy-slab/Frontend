@@ -4,10 +4,12 @@ import { CalendarCheck, ChevronDown, Link, ListOrdered, LoaderCircle, MapPin, Pe
 import type { Trip } from '@/entities/travel/model/travel'
 import type { AuthUser } from '@/entities/auth/api/authApi'
 import { createChatMessagePayload, createChatSubscribePayload, fetchChatMessages, getChatSocketUrl } from '@/entities/chat/api/chatApi'
-import type { ChatMessageResponse, ChatSocketMessage } from '@/entities/chat/api/chatApi'
+import type { AiAnalysisNoResultReason, ChatMessageResponse, ChatSocketMessage } from '@/entities/chat/api/chatApi'
 import { fetchPlaces } from '@/entities/place/api/placeApi'
 import { analyzeTripChat, applyAiAnalysisRun, applyAiSuggestion, getAiSuggestions, rejectAiAnalysisRun, rejectAiSuggestion } from '@/entities/travel/api/tripAiApi'
 import type { AiSuggestion, AiSuggestionStatus } from '@/entities/travel/api/tripAiApi'
+import { castTripVoteBallot, closeTripVote, createAiSuggestionVote, getTripVote } from '@/entities/travel/api/tripVoteApi'
+import type { VoteResponse } from '@/entities/travel/api/tripVoteApi'
 import { createChecklistItem, createInviteCode, createTripSchedule, deleteChecklistItem, deleteScheduleItem, fetchChecklistItems, fetchTripMembers, fetchTripSchedules, updateTripMemberRole, updateTripSchedule } from '@/entities/travel/api/tripApi'
 import type { ChecklistItemResponse, TripMemberResponse, TripMemberRole, TripSchedulePayload, TripScheduleResponse } from '@/entities/travel/api/tripApi'
 import { canInviteTripMembers } from '@/entities/travel/model/tripAccess'
@@ -47,6 +49,12 @@ type Message = {
   pending?: boolean
 }
 
+type AiNoResultNotice = {
+  analysisRunId: number
+  reasonCode: AiAnalysisNoResultReason | null
+  message: string
+}
+
 type Member = {
   id: number
   name: string
@@ -75,10 +83,17 @@ const isLoadingSuggestions = ref(false)
 const isAnalyzing = ref(false)
 const applyingSuggestionIds = ref<number[]>([])
 const rejectingSuggestionIds = ref<number[]>([])
+const creatingVoteSuggestionIds = ref<number[]>([])
 const bulkProcessingRunId = ref<number | null>(null)
 const hasNewSuggestions = ref(false)
 const aiError = ref('')
+const aiNoResult = ref<AiNoResultNotice | null>(null)
 const additionalRequest = ref('')
+const activeVote = ref<VoteResponse | null>(null)
+const isLoadingVote = ref(false)
+const isCastingVote = ref(false)
+const isClosingVote = ref(false)
+const voteError = ref('')
 const chatSocket = ref<WebSocket | null>(null)
 const chatListEl = ref<HTMLElement | null>(null)
 const pendingChatMessages = ref<string[]>([])
@@ -88,8 +103,14 @@ const editingSchedule = ref<ScheduleItem | null>(null)
 const scheduleReplaceTarget = ref<ScheduleItem | null>(null)
 const selectedScheduleItemId = ref<number | null>(null)
 const canInviteMembers = computed(() => canInviteTripMembers(props.trip))
+const isTeamTrip = computed(() => props.trip?.tripType?.toUpperCase() === 'TEAM')
 const canManageTripMembers = computed(() => canInviteMembers.value && props.currentUser?.userId === props.trip?.ownerUserId)
 const members = ref<Member[]>([])
+const currentTripRole = computed(() => {
+  if (props.currentUser?.userId === props.trip?.ownerUserId) return 'OWNER'
+  return members.value.find((member) => member.id === props.currentUser?.userId)?.apiRole ?? null
+})
+const canCloseVotes = computed(() => currentTripRole.value === 'OWNER' || currentTripRole.value === 'EDITOR')
 const checklistTitle = ref('')
 const checklist = ref<ChecklistItemResponse[]>([])
 const messages = ref<Message[]>([])
@@ -136,9 +157,11 @@ const suggestionGroups = computed(() => {
 })
 const aiStatusOptions: Array<{ value: AiSuggestionStatus; label: string }> = [
   { value: 'PENDING', label: '검토 대기' },
+  { value: 'VOTING', label: '투표 진행 중' },
   { value: 'APPLIED', label: '적용 완료' },
   { value: 'REJECTED', label: '거절됨' },
 ]
+const defaultAiNoResultMessage = 'AI가 일정을 판단하지 못했습니다.'
 
 function compareScheduleItems(left: ScheduleItem, right: ScheduleItem) {
   const dateCompare = left.date.localeCompare(right.date)
@@ -545,9 +568,18 @@ function formatSuggestionTime(time: string | null) {
 }
 
 function suggestionStatusLabel(status: AiSuggestionStatus) {
+  if (status === 'VOTING') return '투표 진행 중'
   if (status === 'APPLIED') return '적용 완료'
   if (status === 'REJECTED') return '거절됨'
   return '검토 대기'
+}
+
+function aiNoResultMessage(reasonCode: AiAnalysisNoResultReason, message?: string) {
+  if (message?.trim()) return message.trim()
+  if (reasonCode === 'INSUFFICIENT_MESSAGES') {
+    return '분석할 채팅 메시지가 충분하지 않습니다.'
+  }
+  return '채팅에서 일정 관련 내용을 찾지 못했습니다.'
 }
 
 async function loadAiSuggestions(status: AiSuggestionStatus = selectedStatus.value) {
@@ -579,6 +611,7 @@ async function requestAiAnalysis() {
 
   isAnalyzing.value = true
   aiError.value = ''
+  aiNoResult.value = null
   try {
     const result = await analyzeTripChat(props.accessToken, props.trip.id, {
       messageLimit: 100,
@@ -586,8 +619,18 @@ async function requestAiAnalysis() {
     })
     selectedStatus.value = 'PENDING'
     suggestions.value = result.suggestions
-    hasNewSuggestions.value = result.suggestions.length > 0
     additionalRequest.value = ''
+    if (result.status === 'NO_RESULT') {
+      hasNewSuggestions.value = false
+      aiNoResult.value = {
+        analysisRunId: result.analysisRunId,
+        reasonCode: null,
+        message: defaultAiNoResultMessage,
+      }
+      emit('saved', defaultAiNoResultMessage)
+      return
+    }
+    hasNewSuggestions.value = result.suggestions.length > 0
     emit('saved', result.suggestions.length > 0 ? 'AI 일정 제안이 도착했습니다.' : '새로운 AI 일정 제안이 없습니다.')
   } catch (error) {
     aiError.value = error instanceof Error ? error.message : 'AI 일정 분석을 시작하지 못했습니다.'
@@ -628,6 +671,80 @@ async function rejectSuggestion(suggestion: AiSuggestion) {
     await loadAiSuggestions()
   } finally {
     rejectingSuggestionIds.value = setSuggestionProcessing(rejectingSuggestionIds.value, suggestion.aiSuggestionId, false)
+  }
+}
+
+async function createSuggestionVote(suggestion: AiSuggestion) {
+  if (!props.accessToken || !props.trip?.id || !isTeamTrip.value) return
+  if (!window.confirm(`"${suggestion.title}" 제안을 팀 투표에 올릴까요?`)) return
+
+  creatingVoteSuggestionIds.value = setSuggestionProcessing(
+    creatingVoteSuggestionIds.value,
+    suggestion.aiSuggestionId,
+    true,
+  )
+  try {
+    await createAiSuggestionVote(props.accessToken, props.trip.id, suggestion.aiSuggestionId)
+    selectedStatus.value = 'VOTING'
+    await loadAiSuggestions('VOTING')
+    emit('saved', 'AI 일정 제안을 투표에 올렸습니다.')
+  } catch (error) {
+    emit('saved', error instanceof Error ? error.message : 'AI 일정 제안 투표를 만들지 못했습니다.')
+    await loadAiSuggestions('PENDING')
+  } finally {
+    creatingVoteSuggestionIds.value = setSuggestionProcessing(
+      creatingVoteSuggestionIds.value,
+      suggestion.aiSuggestionId,
+      false,
+    )
+  }
+}
+
+async function openSuggestionVote(suggestion: AiSuggestion) {
+  if (!props.accessToken || !props.trip?.id || suggestion.voteId === null) return
+  isLoadingVote.value = true
+  voteError.value = ''
+  try {
+    activeVote.value = await getTripVote(props.accessToken, props.trip.id, suggestion.voteId)
+  } catch (error) {
+    voteError.value = error instanceof Error ? error.message : '투표를 불러오지 못했습니다.'
+    emit('saved', voteError.value)
+  } finally {
+    isLoadingVote.value = false
+  }
+}
+
+async function castVote(voteOptionId: number) {
+  if (!props.accessToken || !props.trip?.id || !activeVote.value || isCastingVote.value) return
+  isCastingVote.value = true
+  voteError.value = ''
+  try {
+    activeVote.value = await castTripVoteBallot(
+      props.accessToken,
+      props.trip.id,
+      activeVote.value.voteId,
+      voteOptionId,
+    )
+  } catch (error) {
+    voteError.value = error instanceof Error ? error.message : '투표에 참여하지 못했습니다.'
+  } finally {
+    isCastingVote.value = false
+  }
+}
+
+async function closeVote() {
+  if (!props.accessToken || !props.trip?.id || !activeVote.value || isClosingVote.value || !canCloseVotes.value) return
+  isClosingVote.value = true
+  voteError.value = ''
+  try {
+    activeVote.value = await closeTripVote(props.accessToken, props.trip.id, activeVote.value.voteId)
+    await Promise.all([loadAiSuggestions(selectedStatus.value), loadScheduleItems()])
+    emit('saved', '투표를 종료하고 결과를 반영했습니다.')
+  } catch (error) {
+    voteError.value = error instanceof Error ? error.message : '투표를 종료하지 못했습니다.'
+    emit('saved', voteError.value)
+  } finally {
+    isClosingVote.value = false
   }
 }
 
@@ -719,8 +836,22 @@ function connectChatSocket() {
     if (data.type === 'AI_ANALYSIS_COMPLETED' && data.tripId === props.trip?.id) {
       selectedStatus.value = 'PENDING'
       hasNewSuggestions.value = true
+      aiNoResult.value = null
       void loadAiSuggestions('PENDING')
       emit('saved', '새로운 AI 일정 제안이 도착했습니다.')
+      return
+    }
+    if (data.type === 'AI_ANALYSIS_NO_RESULT' && data.tripId === props.trip?.id) {
+      const message = aiNoResultMessage(data.reasonCode, data.message)
+      selectedStatus.value = 'PENDING'
+      hasNewSuggestions.value = false
+      aiNoResult.value = {
+        analysisRunId: data.analysisRunId,
+        reasonCode: data.reasonCode,
+        message,
+      }
+      void loadAiSuggestions('PENDING')
+      emit('saved', message)
       return
     }
     if (data.type === 'ERROR' && data.error) {
@@ -855,6 +986,7 @@ watch(() => [props.accessToken, props.trip?.id], () => {
   void resetChat()
   selectedStatus.value = 'PENDING'
   hasNewSuggestions.value = false
+  aiNoResult.value = null
   void loadAiSuggestions('PENDING')
 })
 onBeforeUnmount(closeChatSocket)
@@ -1034,6 +1166,16 @@ onBeforeUnmount(closeChatSocket)
             AI 일정 제안을 불러오는 중입니다.
           </p>
           <p v-else-if="aiError" class="rounded-lg bg-red-50 px-3 py-3 text-sm font-bold text-red-600">{{ aiError }}</p>
+          <div
+            v-else-if="aiNoResult && selectedStatus === 'PENDING'"
+            data-testid="ai-no-result"
+            class="rounded-lg bg-amber-50 px-4 py-4 text-sm text-amber-900"
+          >
+            <p class="font-black">{{ defaultAiNoResultMessage }}</p>
+            <p v-if="aiNoResult.message !== defaultAiNoResultMessage" class="mt-1 font-semibold">
+              {{ aiNoResult.message }}
+            </p>
+          </div>
           <p v-else-if="suggestions.length === 0" class="rounded-lg bg-slate-50 px-3 py-5 text-center text-sm font-bold text-slate-500">
             아직 도착한 AI 일정 제안이 없습니다.
           </p>
@@ -1052,6 +1194,7 @@ onBeforeUnmount(closeChatSocket)
                     전체 거절
                   </button>
                   <button
+                    v-if="!isTeamTrip"
                     :data-testid="`apply-ai-run-${group.analysisRunId}`"
                     class="rounded-lg bg-brand-500 px-3 py-2 text-xs font-black text-white hover:bg-brand-600 disabled:opacity-50"
                     :disabled="bulkProcessingRunId !== null"
@@ -1105,14 +1248,43 @@ onBeforeUnmount(closeChatSocket)
                         {{ rejectingSuggestionIds.includes(suggestion.aiSuggestionId) ? '거절 중' : '거절' }}
                       </button>
                       <button
+                        v-if="isTeamTrip"
+                        :data-testid="`create-ai-vote-${suggestion.aiSuggestionId}`"
+                        class="rounded-lg bg-brand-500 px-3 py-2 text-xs font-black text-white hover:bg-brand-600 disabled:opacity-50"
+                        :disabled="creatingVoteSuggestionIds.includes(suggestion.aiSuggestionId)"
+                        @click="createSuggestionVote(suggestion)"
+                      >
+                        {{ creatingVoteSuggestionIds.includes(suggestion.aiSuggestionId) ? '생성 중' : '투표 올리기' }}
+                      </button>
+                      <button
+                        v-else
                         :data-testid="`apply-ai-suggestion-${suggestion.aiSuggestionId}`"
                         class="rounded-lg bg-brand-500 px-3 py-2 text-xs font-black text-white hover:bg-brand-600 disabled:opacity-50"
                         :disabled="applyingSuggestionIds.includes(suggestion.aiSuggestionId)"
                         @click="applySuggestion(suggestion)"
                       >
-                        {{ applyingSuggestionIds.includes(suggestion.aiSuggestionId) ? '적용 중' : '일정에 적용' }}
+                        {{ applyingSuggestionIds.includes(suggestion.aiSuggestionId) ? '처리 중' : '수락' }}
                       </button>
                     </template>
+                    <template v-else-if="suggestion.status === 'VOTING'">
+                      <span class="inline-flex items-center rounded-lg bg-amber-50 px-3 py-2 text-xs font-black text-amber-700">
+                        투표 진행 중
+                      </span>
+                      <button
+                        :data-testid="`open-ai-vote-${suggestion.aiSuggestionId}`"
+                        class="rounded-lg bg-brand-500 px-3 py-2 text-xs font-black text-white hover:bg-brand-600 disabled:opacity-50"
+                        :disabled="suggestion.voteId === null || isLoadingVote"
+                        @click="openSuggestionVote(suggestion)"
+                      >
+                        투표 보기
+                      </button>
+                    </template>
+                    <span v-else-if="suggestion.status === 'APPLIED'" class="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700">
+                      일정 반영 완료
+                    </span>
+                    <span v-else-if="suggestion.status === 'REJECTED'" class="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600">
+                      거절됨
+                    </span>
                   </div>
                 </article>
               </div>
@@ -1490,6 +1662,60 @@ onBeforeUnmount(closeChatSocket)
           <div class="mt-4 flex justify-end gap-2">
             <button class="h-10 rounded-lg bg-slate-100 px-4 text-sm font-black text-slate-700" @click="showOrderModal = false">
               닫기
+            </button>
+          </div>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="modal-fade">
+      <div v-if="activeVote" class="fixed inset-0 z-[95] grid place-items-center bg-slate-900/55 p-4">
+        <section data-testid="ai-vote-modal" class="modal-panel w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <p class="text-xs font-black text-brand-500">팀 일정 투표</p>
+              <h2 class="mt-1 text-xl font-black text-slate-950">{{ activeVote.title }}</h2>
+              <p class="mt-1 text-xs font-semibold text-slate-500">총 {{ activeVote.totalBallotCount }}표</p>
+            </div>
+            <button class="text-slate-500" aria-label="투표 닫기" @click="activeVote = null; voteError = ''">
+              <X :size="22" />
+            </button>
+          </div>
+
+          <p v-if="voteError" class="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-600">
+            {{ voteError }}
+          </p>
+
+          <div class="mt-4 space-y-3">
+            <button
+              v-for="option in activeVote.options"
+              :key="option.voteOptionId"
+              :data-testid="`cast-vote-option-${option.voteOptionId}`"
+              class="flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60"
+              :class="activeVote.selectedOptionId === option.voteOptionId ? 'border-brand-500 bg-brand-50' : 'border-slate-200 bg-white hover:border-brand-200'"
+              :disabled="isCastingVote || activeVote.status !== 'OPEN'"
+              @click="castVote(option.voteOptionId)"
+            >
+              <span>
+                <span class="block font-black text-slate-900">{{ option.optionTitle }}</span>
+                <span v-if="option.description" class="mt-0.5 block text-xs font-semibold text-slate-500">{{ option.description }}</span>
+              </span>
+              <span class="text-sm font-black text-brand-500">{{ option.voteCount }}표</span>
+            </button>
+          </div>
+
+          <div class="mt-5 flex items-center justify-between gap-2">
+            <span class="text-xs font-black" :class="activeVote.status === 'OPEN' ? 'text-amber-600' : 'text-slate-500'">
+              {{ activeVote.status === 'OPEN' ? '투표 진행 중' : '투표 종료' }}
+            </span>
+            <button
+              v-if="canCloseVotes && activeVote.status === 'OPEN'"
+              data-testid="close-ai-vote"
+              class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-black text-white disabled:opacity-50"
+              :disabled="isClosingVote"
+              @click="closeVote"
+            >
+              {{ isClosingVote ? '종료 중' : '투표 종료' }}
             </button>
           </div>
         </section>

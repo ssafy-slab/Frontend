@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildChatSocketUrl, createChatMessagePayload, createChatSubscribePayload, fetchChatMessages } from './chatApi'
+import type { ChatSocketMessage } from './chatApi'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -44,5 +45,17 @@ describe('chatApi', () => {
   it('creates websocket payloads for subscribe and chat messages', () => {
     expect(createChatSubscribePayload(1)).toEqual({ type: 'SUBSCRIBE', tripId: 1 })
     expect(createChatMessagePayload(1, '안녕')).toEqual({ type: 'CHAT', tripId: 1, content: '안녕' })
+  })
+
+  it('represents an AI analysis no-result websocket event', () => {
+    const message: ChatSocketMessage = {
+      type: 'AI_ANALYSIS_NO_RESULT',
+      tripId: 1,
+      analysisRunId: 12,
+      reasonCode: 'NO_SCHEDULE_CONTEXT',
+      message: '메시지가 너무 적거나 일정 관련 내용이 없어 제안을 만들지 못했습니다.',
+    }
+
+    expect(message.type).toBe('AI_ANALYSIS_NO_RESULT')
   })
 })

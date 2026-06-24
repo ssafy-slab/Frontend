@@ -23,6 +23,7 @@ const suggestion = {
   dayNo: 1,
   sortOrder: 1,
   status: 'PENDING' as const,
+  voteId: null,
   appliedScheduleItemId: null,
   createdAt: '2026-06-23T12:00:00',
   appliedAt: null,
@@ -66,12 +67,30 @@ describe('tripAiApi', () => {
     )
   })
 
+  it('returns a no-result analysis response without treating it as an error', async () => {
+    const responseBody = {
+      analysisRunId: 12,
+      triggerType: 'BUTTON',
+      status: 'NO_RESULT',
+      suggestions: [],
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(responseBody), { status: 200 }),
+    )
+
+    const result = await analyzeTripChat('token', 1)
+
+    expect(result.status).toBe('NO_RESULT')
+    expect(result.suggestions).toEqual([])
+  })
+
   it('loads pending suggestions by default and supports status filters', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => (
       new Response(JSON.stringify([suggestion]), { status: 200 })
     ))
 
     await getAiSuggestions('token', 1)
+    await getAiSuggestions('token', 1, 'VOTING')
     await getAiSuggestions('token', 1, 'APPLIED')
 
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -81,6 +100,11 @@ describe('tripAiApi', () => {
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
+      expect.stringContaining('/api/trips/1/ai/suggestions?status=VOTING'),
+      expect.objectContaining({ headers: { Authorization: 'Bearer token' } }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
       expect.stringContaining('/api/trips/1/ai/suggestions?status=APPLIED'),
       expect.objectContaining({ headers: { Authorization: 'Bearer token' } }),
     )

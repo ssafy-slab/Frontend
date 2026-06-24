@@ -1,7 +1,8 @@
 import { apiBaseUrl } from '@/shared/lib/apiBaseUrl'
 
-export type AiSuggestionStatus = 'PENDING' | 'APPLIED' | 'REJECTED'
+export type AiSuggestionStatus = 'PENDING' | 'VOTING' | 'APPLIED' | 'REJECTED'
 export type AiAnalysisTriggerType = 'BUTTON' | 'AUTO'
+export type AiAnalysisStatus = 'SUCCEEDED' | 'NO_RESULT'
 
 export type AiSuggestion = {
   aiSuggestionId: number
@@ -18,6 +19,7 @@ export type AiSuggestion = {
   dayNo: number | null
   sortOrder: number | null
   status: AiSuggestionStatus
+  voteId: number | null
   appliedScheduleItemId: number | null
   createdAt: string | null
   appliedAt: string | null
@@ -26,7 +28,7 @@ export type AiSuggestion = {
 export type AiAnalysisResponse = {
   analysisRunId: number
   triggerType: AiAnalysisTriggerType
-  status: 'SUCCEEDED'
+  status: AiAnalysisStatus
   suggestions: AiSuggestion[]
 }
 

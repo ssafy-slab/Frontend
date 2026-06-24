@@ -10,6 +10,10 @@ export type ChatMessageResponse = {
   createdAt: string
 }
 
+export type AiAnalysisNoResultReason =
+  | 'INSUFFICIENT_MESSAGES'
+  | 'NO_SCHEDULE_CONTEXT'
+
 export type ChatSocketMessage =
   | {
       type: 'SUBSCRIBED'
@@ -33,6 +37,13 @@ export type ChatSocketMessage =
       type: 'AI_ANALYSIS_COMPLETED'
       tripId: number
       analysisRunId: number
+    }
+  | {
+      type: 'AI_ANALYSIS_NO_RESULT'
+      tripId: number
+      analysisRunId: number
+      reasonCode: AiAnalysisNoResultReason
+      message: string
     }
 
 export async function fetchChatMessages(token: string, tripId: number, limit = 50) {

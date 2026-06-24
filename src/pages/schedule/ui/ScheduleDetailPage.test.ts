@@ -26,6 +26,17 @@ const {
   rejectAiSuggestion: vi.fn(),
 }))
 const {
+  castTripVoteBallot,
+  closeTripVote,
+  createAiSuggestionVote,
+  getTripVote,
+} = vi.hoisted(() => ({
+  castTripVoteBallot: vi.fn(),
+  closeTripVote: vi.fn(),
+  createAiSuggestionVote: vi.fn(),
+  getTripVote: vi.fn(),
+}))
+const {
   createChecklistItem,
   createTripSchedule,
   deleteChecklistItem,
@@ -67,6 +78,17 @@ vi.mock('@/entities/travel/api/tripAiApi', async (importOriginal) => {
     getAiSuggestions,
     rejectAiAnalysisRun,
     rejectAiSuggestion,
+  }
+})
+
+vi.mock('@/entities/travel/api/tripVoteApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/entities/travel/api/tripVoteApi')>()
+  return {
+    ...actual,
+    castTripVoteBallot,
+    closeTripVote,
+    createAiSuggestionVote,
+    getTripVote,
   }
 })
 
@@ -152,6 +174,7 @@ function createAiSuggestion(overrides: Record<string, unknown> = {}) {
     dayNo: 1,
     sortOrder: 1,
     status: 'PENDING',
+    voteId: null,
     appliedScheduleItemId: null,
     createdAt: '2026-06-23T12:00:00',
     appliedAt: null,
@@ -159,9 +182,29 @@ function createAiSuggestion(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function createVote(overrides: Record<string, unknown> = {}) {
+  return {
+    voteId: 41,
+    tripId: 1,
+    creatorUserId: 10,
+    title: 'AI 일정 제안 투표',
+    status: 'OPEN',
+    startedAt: '2026-06-24T10:00:00',
+    endedAt: null,
+    options: [
+      { voteOptionId: 501, placeId: null, optionTitle: '찬성', description: null, sortOrder: 1, voteCount: 1 },
+      { voteOptionId: 502, placeId: null, optionTitle: '반대', description: null, sortOrder: 2, voteCount: 0 },
+    ],
+    selectedOptionId: null,
+    totalBallotCount: 1,
+    ...overrides,
+  }
+}
+
 describe('ScheduleDetailPage collaboration controls', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    getAiSuggestions.mockReset()
     MockWebSocket.instances = []
     vi.stubGlobal('WebSocket', MockWebSocket)
     fetchChatMessages.mockResolvedValue([
@@ -187,6 +230,10 @@ describe('ScheduleDetailPage collaboration controls', () => {
     rejectAiSuggestion.mockResolvedValue(createAiSuggestion({ status: 'REJECTED' }))
     applyAiAnalysisRun.mockResolvedValue([createAiSuggestion({ status: 'APPLIED', appliedScheduleItemId: 200 })])
     rejectAiAnalysisRun.mockResolvedValue([createAiSuggestion({ status: 'REJECTED' })])
+    createAiSuggestionVote.mockResolvedValue(createVote())
+    getTripVote.mockResolvedValue(createVote())
+    castTripVoteBallot.mockResolvedValue(createVote({ selectedOptionId: 501, totalBallotCount: 2 }))
+    closeTripVote.mockResolvedValue(createVote({ status: 'CLOSED', endedAt: '2026-06-24T11:00:00' }))
     fetchPlaces.mockResolvedValue({
       content: [
         {
@@ -622,6 +669,29 @@ describe('ScheduleDetailPage collaboration controls', () => {
     expect(wrapper.get('[data-testid="ai-suggestions-section"]').text()).toContain('해운대 방문')
   })
 
+  it('shows a no-result notice and toast when manual analysis cannot make suggestions', async () => {
+    analyzeTripChat.mockResolvedValueOnce({
+      analysisRunId: 12,
+      triggerType: 'BUTTON',
+      status: 'NO_RESULT',
+      suggestions: [],
+    })
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: { stubs: { Transition: false } },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="analyze-trip-chat"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="ai-no-result"]').text()).toContain('AI가 일정을 판단하지 못했습니다.')
+    expect(wrapper.emitted('saved')).toContainEqual(['AI가 일정을 판단하지 못했습니다.'])
+  })
+
   it('reloads suggestions when the current trip receives an AI analysis completion event', async () => {
     getAiSuggestions
       .mockResolvedValueOnce([])
@@ -651,13 +721,7 @@ describe('ScheduleDetailPage collaboration controls', () => {
     expect(wrapper.emitted('saved')).toContainEqual(['새로운 AI 일정 제안이 도착했습니다.'])
   })
 
-  it('applies and rejects individual suggestions without disabling unrelated cards', async () => {
-    getAiSuggestions
-      .mockResolvedValueOnce([
-        createAiSuggestion(),
-        createAiSuggestion({ aiSuggestionId: 32, title: 'DB 미연결 일정', suggestedPlaceId: null }),
-      ])
-      .mockResolvedValue([])
+  it('shows a no-result notice when the current trip receives a no-result event', async () => {
     const wrapper = mount(ScheduleDetailPage, {
       props: {
         trip: createTrip('TEAM'),
@@ -666,9 +730,77 @@ describe('ScheduleDetailPage collaboration controls', () => {
       global: { stubs: { Transition: false } },
     })
     await flushPromises()
+    getAiSuggestions.mockClear()
+
+    const socket = MockWebSocket.instances[0]
+    if (!socket) throw new Error('chat socket was not created')
+    const message = '메시지가 너무 적거나 일정 관련 내용이 없어 제안을 만들지 못했습니다.'
+    socket.emit('message', {
+      data: JSON.stringify({
+        type: 'AI_ANALYSIS_NO_RESULT',
+        tripId: 1,
+        analysisRunId: 12,
+        reasonCode: 'NO_SCHEDULE_CONTEXT',
+        message,
+      }),
+    })
+    await flushPromises()
+
+    expect(getAiSuggestions).toHaveBeenCalledWith('token', 1, 'PENDING')
+    expect(wrapper.get('[data-testid="ai-no-result"]').text()).toContain(message)
+    expect(wrapper.emitted('saved')).toContainEqual([message])
+  })
+
+  it('ignores a no-result event for another trip', async () => {
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: { stubs: { Transition: false } },
+    })
+    await flushPromises()
+    getAiSuggestions.mockClear()
+    const savedCount = wrapper.emitted('saved')?.length ?? 0
+
+    const socket = MockWebSocket.instances[0]
+    if (!socket) throw new Error('chat socket was not created')
+    socket.emit('message', {
+      data: JSON.stringify({
+        type: 'AI_ANALYSIS_NO_RESULT',
+        tripId: 2,
+        analysisRunId: 12,
+        reasonCode: 'INSUFFICIENT_MESSAGES',
+        message: '',
+      }),
+    })
+    await flushPromises()
+
+    expect(getAiSuggestions).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="ai-no-result"]').exists()).toBe(false)
+    expect(wrapper.emitted('saved')?.length ?? 0).toBe(savedCount)
+  })
+
+  it('applies and rejects individual suggestions for a personal trip', async () => {
+    getAiSuggestions
+      .mockResolvedValueOnce([
+        createAiSuggestion(),
+        createAiSuggestion({ aiSuggestionId: 32, title: 'DB 미연결 일정', suggestedPlaceId: null }),
+      ])
+      .mockResolvedValue([])
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('PERSONAL'),
+        accessToken: 'token',
+      },
+      global: { stubs: { Transition: false } },
+    })
+    await flushPromises()
 
     expect(wrapper.get('[data-testid="open-ai-place-31"]').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('[data-testid="open-ai-place-32"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="apply-ai-suggestion-31"]').text()).toContain('수락')
+    expect(wrapper.find('[data-testid="create-ai-vote-31"]').exists()).toBe(false)
     await wrapper.get('[data-testid="apply-ai-suggestion-31"]').trigger('click')
     await flushPromises()
 
@@ -687,13 +819,13 @@ describe('ScheduleDetailPage collaboration controls', () => {
     expect(rejectAiSuggestion).toHaveBeenCalledWith('token', 1, 33)
   })
 
-  it('applies every pending suggestion in an analysis run and refreshes schedules', async () => {
+  it('applies every pending suggestion in a personal analysis run and refreshes schedules', async () => {
     getAiSuggestions
       .mockResolvedValueOnce([createAiSuggestion(), createAiSuggestion({ aiSuggestionId: 32 })])
       .mockResolvedValueOnce([])
     const wrapper = mount(ScheduleDetailPage, {
       props: {
-        trip: createTrip('TEAM'),
+        trip: createTrip('PERSONAL'),
         accessToken: 'token',
       },
       global: { stubs: { Transition: false } },
@@ -705,6 +837,105 @@ describe('ScheduleDetailPage collaboration controls', () => {
 
     expect(applyAiAnalysisRun).toHaveBeenCalledWith('token', 1, 12)
     expect(fetchTripSchedules).toHaveBeenCalledTimes(2)
+  })
+
+  it('creates a vote instead of showing direct apply for a pending team suggestion', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    getAiSuggestions
+      .mockResolvedValueOnce([createAiSuggestion()])
+      .mockResolvedValueOnce([createAiSuggestion({ status: 'VOTING', voteId: 41 })])
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: { stubs: { Transition: false } },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="apply-ai-suggestion-31"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="apply-ai-run-12"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="create-ai-vote-31"]').trigger('click')
+    await flushPromises()
+
+    expect(window.confirm).toHaveBeenCalled()
+    expect(createAiSuggestionVote).toHaveBeenCalledWith('token', 1, 31)
+    expect(getAiSuggestions).toHaveBeenLastCalledWith('token', 1, 'VOTING')
+    expect(wrapper.text()).toContain('투표 진행 중')
+  })
+
+  it('does not create a team suggestion vote when confirmation is cancelled', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    getAiSuggestions.mockResolvedValueOnce([createAiSuggestion()])
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: { stubs: { Transition: false } },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="create-ai-vote-31"]').trigger('click')
+
+    expect(createAiSuggestionVote).not.toHaveBeenCalled()
+  })
+
+  it('opens a voting suggestion, casts a ballot, and lets an editor close it', async () => {
+    getAiSuggestions.mockResolvedValueOnce([
+      createAiSuggestion({ status: 'VOTING', voteId: 41 }),
+    ])
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+        currentUser: { userId: 20, email: 'editor@test.com', nickname: 'editor', role: 'USER', localAccount: true },
+      },
+      global: { stubs: { Transition: false } },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('투표 진행 중')
+    await wrapper.get('[data-testid="open-ai-vote-31"]').trigger('click')
+    await flushPromises()
+
+    expect(getTripVote).toHaveBeenCalledWith('token', 1, 41)
+    expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('찬성')
+    await wrapper.get('[data-testid="cast-vote-option-501"]').trigger('click')
+    await flushPromises()
+
+    expect(castTripVoteBallot).toHaveBeenCalledWith('token', 1, 41, 501)
+    await wrapper.get('[data-testid="close-ai-vote"]').trigger('click')
+    await flushPromises()
+
+    expect(closeTripVote).toHaveBeenCalledWith('token', 1, 41)
+    expect(getAiSuggestions).toHaveBeenCalled()
+    expect(fetchTripSchedules).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps a vote open when closing fails with a schedule conflict', async () => {
+    closeTripVote.mockRejectedValueOnce(new Error('투표 또는 제안 상태가 변경되었거나 일정 시간이 충돌합니다. 최신 상태를 확인해 주세요.'))
+    getAiSuggestions.mockResolvedValueOnce([
+      createAiSuggestion({ status: 'VOTING', voteId: 41 }),
+    ])
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+        currentUser: { userId: 10, email: 'owner@test.com', nickname: 'owner', role: 'USER', localAccount: true },
+      },
+      global: { stubs: { Transition: false } },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-ai-vote-31"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="close-ai-vote"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('일정 시간이 충돌합니다')
+    expect(wrapper.find('[data-testid="close-ai-vote"]').exists()).toBe(true)
+    expect(fetchTripSchedules).toHaveBeenCalledTimes(1)
   })
 
   it('loads schedule items for the trip', async () => {
