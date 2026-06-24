@@ -55,11 +55,22 @@ const postContentCells = computed(() => {
   if (!post.value) return []
   if (post.value.cells?.length) return [...post.value.cells].sort((left, right) => left.sortOrder - right.sortOrder)
   return [
-    ...(postImageUrl.value ? [{ postCellId: null, sortOrder: 1, cellType: 'IMAGE' as const, textContent: null, imageUrl: post.value.imageUrl }] : []),
-    ...(post.value.content ? [{ postCellId: null, sortOrder: 2, cellType: 'TEXT' as const, textContent: post.value.content, imageUrl: null }] : []),
+    ...(postImageUrl.value ? [{ postCellId: null, sortOrder: 1, cellType: 'IMAGE' as const, textContent: null, imageUrl: post.value.imageUrl, alignment: 'LEFT' as const }] : []),
+    ...(post.value.content ? [{ postCellId: null, sortOrder: 2, cellType: 'TEXT' as const, textContent: post.value.content, imageUrl: null, alignment: 'LEFT' as const }] : []),
   ]
 })
 const displayComments = computed(() => flattenCommunityComments(comments.value))
+
+function cellAlignmentClass(alignment: 'LEFT' | 'CENTER' | 'RIGHT' | undefined, type: 'TEXT' | 'IMAGE') {
+  if (type === 'TEXT') {
+    if (alignment === 'CENTER') return 'text-center'
+    if (alignment === 'RIGHT') return 'text-right'
+    return 'text-left'
+  }
+  if (alignment === 'CENTER') return 'justify-center'
+  if (alignment === 'RIGHT') return 'justify-end'
+  return 'justify-start'
+}
 
 function syncCommentCount() {
   if (!post.value) return
@@ -286,14 +297,22 @@ onMounted(loadPost)
       <div class="mt-6 space-y-6 text-base font-semibold leading-8 text-slate-700">
         <template v-if="postContentCells.length">
           <div v-for="cell in postContentCells" :key="`${cell.sortOrder}-${cell.postCellId ?? cell.cellType}`" data-testid="post-content-cell">
-            <div v-if="cell.cellType === 'IMAGE' && cell.imageUrl" class="flex min-h-40 items-center justify-center overflow-hidden rounded-xl bg-slate-100">
+            <div
+              v-if="cell.cellType === 'IMAGE' && cell.imageUrl"
+              class="flex"
+              :class="cellAlignmentClass(cell.alignment, 'IMAGE')"
+            >
               <img
                 :src="resolveCommunityImageUrl(cell.imageUrl)"
                 :alt="post.title"
-                class="max-h-[520px] max-w-full object-contain"
+                class="block h-auto max-h-[520px] max-w-full rounded-xl"
               />
             </div>
-            <p v-else-if="cell.cellType === 'TEXT'" class="whitespace-pre-line break-words [overflow-wrap:anywhere]">
+            <p
+              v-else-if="cell.cellType === 'TEXT'"
+              class="whitespace-pre-line break-words [overflow-wrap:anywhere]"
+              :class="cellAlignmentClass(cell.alignment, 'TEXT')"
+            >
               {{ cell.textContent }}
             </p>
           </div>

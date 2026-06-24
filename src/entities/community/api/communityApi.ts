@@ -1,4 +1,5 @@
 export type CommunitySort = 'latest' | 'popular' | 'comments'
+export type CommunityCellAlignment = 'LEFT' | 'CENTER' | 'RIGHT'
 
 export type CommunityPostSummary = {
   postId: number
@@ -25,6 +26,7 @@ export type CommunityPostCell = {
   cellType: 'TEXT' | 'IMAGE'
   textContent: string | null
   imageUrl: string | null
+  alignment?: CommunityCellAlignment
 }
 
 export type CommunityPostDetail = Omit<CommunityPostSummary, 'excerpt'> & {
@@ -36,6 +38,7 @@ export type CommunityPostCellPayload = {
   cellType: 'TEXT' | 'IMAGE'
   textContent?: string | null
   imageUrl?: string | null
+  alignment?: CommunityCellAlignment
 }
 
 export type CommunityPostPayload = {

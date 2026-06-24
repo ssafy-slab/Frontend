@@ -128,9 +128,9 @@ describe('CommunityDetailPage comments', () => {
       likedByMe: false,
       mine: false,
       cells: [
-        { postCellId: 1, sortOrder: 1, cellType: 'TEXT', textContent: 'First story', imageUrl: null },
-        { postCellId: 2, sortOrder: 2, cellType: 'IMAGE', textContent: null, imageUrl: 'https://example.com/a.jpg' },
-        { postCellId: 3, sortOrder: 3, cellType: 'TEXT', textContent: 'Second story', imageUrl: null },
+        { postCellId: 1, sortOrder: 1, cellType: 'TEXT', textContent: 'First story', imageUrl: null, alignment: 'CENTER' },
+        { postCellId: 2, sortOrder: 2, cellType: 'IMAGE', textContent: null, imageUrl: 'https://example.com/a.jpg', alignment: 'RIGHT' },
+        { postCellId: 3, sortOrder: 3, cellType: 'TEXT', textContent: 'Second story', imageUrl: null, alignment: 'LEFT' },
       ],
     })
     const wrapper = mount(CommunityDetailPage, {
@@ -142,11 +142,66 @@ describe('CommunityDetailPage comments', () => {
     const cells = wrapper.findAll('[data-testid="post-content-cell"]')
     expect(cells).toHaveLength(3)
     expect(cells[0]?.text()).toContain('First story')
+    expect(cells[0]?.get('p').classes()).toContain('text-center')
     expect(cells[1]?.find('img').attributes('src')).toBe('https://example.com/a.jpg')
+    expect(cells[1]?.get('div').classes()).toContain('justify-end')
     expect(cells[2]?.text()).toContain('Second story')
   })
 
-  it('renders the legacy post image without cropping when cells are missing', async () => {
+  it('renders every image using its saved alignment', async () => {
+    fetchCommunityPost.mockResolvedValueOnce({
+      postId: 3,
+      userId: 9,
+      authorNickname: 'writer',
+      placeId: null,
+      placeName: null,
+      category: 'FREE',
+      title: 'multiple photos',
+      content: 'First story',
+      imageUrl: 'https://example.com/a.jpg',
+      likeCount: 0,
+      commentCount: 0,
+      viewCount: 1,
+      createdAt: '2026-06-24T09:00:00',
+      updatedAt: '2026-06-24T09:00:00',
+      likedByMe: false,
+      mine: false,
+      cells: [
+        { postCellId: 1, sortOrder: 1, cellType: 'TEXT', textContent: 'First story', imageUrl: null, alignment: 'LEFT' },
+        { postCellId: 2, sortOrder: 2, cellType: 'IMAGE', textContent: null, imageUrl: 'https://example.com/a.jpg', alignment: 'CENTER' },
+        { postCellId: 3, sortOrder: 3, cellType: 'TEXT', textContent: 'Second story', imageUrl: null, alignment: 'RIGHT' },
+        { postCellId: 4, sortOrder: 4, cellType: 'IMAGE', textContent: null, imageUrl: 'https://example.com/b.jpg', alignment: 'RIGHT' },
+      ],
+    })
+    const wrapper = mount(CommunityDetailPage, {
+      props: { postId: 3, accessToken: 'token' },
+      global: { stubs: { Transition: false } },
+    })
+    await flushPromises()
+
+    const imageCells = wrapper.findAll('[data-testid="post-content-cell"]').filter((cell) => cell.find('img').exists())
+
+    expect(imageCells).toHaveLength(2)
+    expect(imageCells.map((cell) => cell.get('img').attributes('src'))).toEqual([
+      'https://example.com/a.jpg',
+      'https://example.com/b.jpg',
+    ])
+    expect(imageCells[0]?.get('div').classes()).toContain('justify-center')
+    expect(imageCells[1]?.get('div').classes()).toContain('justify-end')
+    for (const cell of imageCells) {
+      expect(cell.get('div').classes()).toContain('flex')
+      expect(cell.get('div').classes()).not.toContain('aspect-[4/3]')
+      expect(cell.get('img').classes()).toEqual(expect.arrayContaining([
+        'block',
+        'h-auto',
+        'max-w-full',
+        'rounded-xl',
+      ]))
+      expect(cell.get('img').classes()).not.toContain('object-cover')
+    }
+  })
+
+  it('renders a legacy post image left aligned without cropping or a gray backing layer', async () => {
     fetchCommunityPost.mockResolvedValueOnce({
       postId: 3,
       userId: 9,
@@ -172,9 +227,21 @@ describe('CommunityDetailPage comments', () => {
     })
     await flushPromises()
 
-    const image = wrapper.get('[data-testid="post-content-cell"] img')
+    const imageCell = wrapper.get('[data-testid="post-content-cell"]')
+    const imageWrapper = imageCell.get('div')
+    const image = imageCell.get('img')
     expect(image.attributes('src')).toBe('https://example.com/legacy.jpg')
-    expect(image.classes()).toContain('object-contain')
+    expect(imageWrapper.classes()).not.toContain('bg-slate-100')
+    expect(imageWrapper.classes()).not.toContain('min-h-40')
+    expect(imageWrapper.classes()).toEqual(expect.arrayContaining(['flex', 'justify-start']))
+    expect(imageWrapper.classes()).not.toContain('aspect-[4/3]')
+    expect(image.classes()).toEqual(expect.arrayContaining([
+      'block',
+      'h-auto',
+      'max-w-full',
+      'rounded-xl',
+    ]))
+    expect(image.classes()).not.toContain('object-contain')
     expect(image.classes()).not.toContain('object-cover')
   })
 

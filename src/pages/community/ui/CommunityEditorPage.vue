@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, ImagePlus, MapPin, Plus, Search, Send, Trash2, X } from 'lucide-vue-next'
+import { AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, ImagePlus, MapPin, Plus, Search, Send, Trash2, X } from 'lucide-vue-next'
 import {
   createCommunityPost,
   fetchCommunityPost,
@@ -10,7 +10,7 @@ import {
 } from '@/entities/community/api/communityApi'
 import { fetchPlaces } from '@/entities/place/api/placeApi'
 import type { Place } from '@/entities/travel/model/travel'
-import type { CommunityPostCellPayload } from '@/entities/community/api/communityApi'
+import type { CommunityCellAlignment, CommunityPostCellPayload } from '@/entities/community/api/communityApi'
 
 const props = defineProps<{
   accessToken: string
@@ -29,6 +29,11 @@ const categories = [
   { label: '질문', value: 'QUESTION' },
   { label: '자유게시판', value: 'FREE' },
 ]
+const alignmentOptions = [
+  { value: 'LEFT' as const, label: '왼쪽 정렬', icon: AlignLeft },
+  { value: 'CENTER' as const, label: '가운데 정렬', icon: AlignCenter },
+  { value: 'RIGHT' as const, label: '오른쪽 정렬', icon: AlignRight },
+]
 
 type EditorCell = {
   id: number
@@ -37,11 +42,12 @@ type EditorCell = {
   imageUrl: string
   file: File | null
   previewUrl: string
+  alignment: CommunityCellAlignment
 }
 
 let nextCellId = 1
 
-function createTextCell(textContent = ''): EditorCell {
+function createTextCell(textContent = '', alignment: CommunityCellAlignment = 'LEFT'): EditorCell {
   return {
     id: nextCellId++,
     cellType: 'TEXT',
@@ -49,10 +55,11 @@ function createTextCell(textContent = ''): EditorCell {
     imageUrl: '',
     file: null,
     previewUrl: '',
+    alignment,
   }
 }
 
-function createImageCell(imageUrl = ''): EditorCell {
+function createImageCell(imageUrl = '', alignment: CommunityCellAlignment = 'LEFT'): EditorCell {
   return {
     id: nextCellId++,
     cellType: 'IMAGE',
@@ -60,6 +67,7 @@ function createImageCell(imageUrl = ''): EditorCell {
     imageUrl,
     file: null,
     previewUrl: '',
+    alignment,
   }
 }
 
@@ -98,8 +106,8 @@ async function loadEditPost() {
       ? [...post.cells]
         .sort((left, right) => left.sortOrder - right.sortOrder)
         .map((cell) => cell.cellType === 'IMAGE'
-          ? createImageCell(cell.imageUrl ?? '')
-          : createTextCell(cell.textContent ?? ''))
+          ? createImageCell(cell.imageUrl ?? '', cell.alignment ?? 'LEFT')
+          : createTextCell(cell.textContent ?? '', cell.alignment ?? 'LEFT'))
       : [
         ...(post.imageUrl ? [createImageCell(post.imageUrl)] : []),
         ...(post.content ? [createTextCell(post.content)] : []),
@@ -188,6 +196,23 @@ function moveCell(index: number, direction: -1 | 1) {
   cells.value = nextCells
 }
 
+function setCellAlignment(index: number, alignment: CommunityCellAlignment) {
+  const cell = cells.value[index]
+  if (cell) cell.alignment = alignment
+}
+
+function alignmentTextClass(alignment: CommunityCellAlignment) {
+  if (alignment === 'CENTER') return 'text-center'
+  if (alignment === 'RIGHT') return 'text-right'
+  return 'text-left'
+}
+
+function alignmentFlexClass(alignment: CommunityCellAlignment) {
+  if (alignment === 'CENTER') return 'justify-center'
+  if (alignment === 'RIGHT') return 'justify-end'
+  return 'justify-start'
+}
+
 function visibleCellImageUrl(cell: EditorCell) {
   return cell.previewUrl || resolveCommunityImageUrl(cell.imageUrl)
 }
@@ -246,14 +271,14 @@ async function submitPost() {
     for (const cell of cells.value) {
       if (cell.cellType === 'TEXT') {
         const textContent = cell.textContent.trim()
-        if (textContent) payloadCells.push({ cellType: 'TEXT', textContent, imageUrl: null })
+        if (textContent) payloadCells.push({ cellType: 'TEXT', textContent, imageUrl: null, alignment: cell.alignment })
         continue
       }
       let imageUrl = cell.imageUrl
       if (cell.file) {
         imageUrl = (await uploadCommunityImage(props.accessToken, cell.file)).imageUrl
       }
-      if (imageUrl) payloadCells.push({ cellType: 'IMAGE', textContent: null, imageUrl })
+      if (imageUrl) payloadCells.push({ cellType: 'IMAGE', textContent: null, imageUrl, alignment: cell.alignment })
     }
     const content = payloadCells.find((cell) => cell.cellType === 'TEXT')?.textContent ?? undefined
     const imageUrl = payloadCells.find((cell) => cell.cellType === 'IMAGE')?.imageUrl ?? undefined
@@ -344,7 +369,22 @@ onBeforeUnmount(() => {
                 <span class="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-600">
                   {{ cell.cellType === 'TEXT' ? '글' : '사진' }} {{ index + 1 }}
                 </span>
-                <div class="flex gap-1">
+                <div class="flex items-center gap-1">
+                  <span class="mr-1 flex overflow-hidden rounded-lg border border-slate-200">
+                    <button
+                      v-for="option in alignmentOptions"
+                      :key="option.value"
+                      type="button"
+                      :data-testid="`cell-align-${option.value.toLowerCase()}-${index}`"
+                      class="grid size-8 place-items-center transition"
+                      :class="cell.alignment === option.value ? 'bg-brand-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'"
+                      :aria-label="option.label"
+                      :aria-pressed="cell.alignment === option.value"
+                      @click="setCellAlignment(index, option.value)"
+                    >
+                      <component :is="option.icon" :size="14" />
+                    </button>
+                  </span>
                   <button type="button" class="grid size-8 place-items-center rounded-lg bg-slate-50 text-slate-500 disabled:opacity-30" :disabled="index === 0" @click="moveCell(index, -1)">
                     <ArrowUp :size="14" />
                   </button>
@@ -362,6 +402,7 @@ onBeforeUnmount(() => {
                 v-model="cell.textContent"
                 :data-testid="`community-cell-text-${index}`"
                 class="brand-input min-h-36 w-full resize-none rounded-lg px-3 py-3 text-sm leading-6 outline-none"
+                :class="alignmentTextClass(cell.alignment)"
                 placeholder="공유하고 싶은 여행 이야기를 적어주세요."
               />
 
@@ -376,8 +417,8 @@ onBeforeUnmount(() => {
                   <input :data-testid="`community-cell-image-${index}`" type="file" accept="image/*" class="hidden" @change="onCellImageSelected(index, $event)" />
                 </label>
                 <div v-else class="overflow-hidden rounded-lg border border-slate-200 bg-white">
-                  <div class="relative flex min-h-44 max-h-80 items-center justify-center bg-slate-100">
-                    <img :src="visibleCellImageUrl(cell)" alt="셀 이미지 미리보기" class="max-h-80 w-full object-contain" />
+                  <div class="relative flex overflow-hidden" :class="alignmentFlexClass(cell.alignment)">
+                    <img :src="visibleCellImageUrl(cell)" alt="셀 이미지 미리보기" class="block h-auto max-h-80 max-w-full" />
                     <button class="absolute right-3 top-3 grid size-8 place-items-center rounded-full bg-white/95 text-slate-700 shadow-lg" type="button" aria-label="이미지 제거" @click="clearCellImage(index)">
                       <X :size="16" />
                     </button>
