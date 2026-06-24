@@ -8,7 +8,6 @@ import CommunityEditorPage from '@/pages/community/ui/CommunityEditorPage.vue'
 import CommunityPage from '@/pages/community/ui/CommunityPage.vue'
 import ExplorePage from '@/pages/explore/ui/ExplorePage.vue'
 import HomePage from '@/pages/home/ui/HomePage.vue'
-import PlaceDetailPage from '@/pages/place/ui/PlaceDetailPage.vue'
 import ProfilePage from '@/pages/profile/ui/ProfilePage.vue'
 import ScheduleDetailPage from '@/pages/schedule/ui/ScheduleDetailPage.vue'
 import SchedulePage from '@/pages/schedule/ui/SchedulePage.vue'
@@ -17,7 +16,6 @@ import AppHeader from '@/widgets/header/ui/AppHeader.vue'
 import MobileNav from '@/widgets/mobile-nav/ui/MobileNav.vue'
 import { resolveViewChange } from '@/app/lib/navigationGuard'
 import type { Place, Trip } from '@/entities/travel/model/travel'
-import { places } from '@/entities/travel/model/travel'
 import { useAuthStore } from '@/stores/auth'
 import type { AuthUser } from '@/entities/auth/api/authApi'
 import { fetchPlace } from '@/entities/place/api/placeApi'
@@ -31,7 +29,7 @@ const authStore = useAuthStore()
 const { user: currentUser } = storeToRefs(authStore)
 const initialView = resolveViewChange(savedViewState.activeView ?? 'home', authStore.isAuthenticated).view as ViewName
 const activeView = ref<ViewName>(initialView)
-const selectedPlace = ref<Place | null>(savedViewState.selectedPlace ?? places[0] ?? null)
+const selectedPlace = ref<Place | null>(savedViewState.selectedPlace ?? null)
 const selectedTrip = ref<Trip | null>(savedViewState.selectedTrip ?? null)
 const appTrips = ref<Trip[]>([])
 const selectedCommunityPostId = ref<number | null>(savedViewState.selectedCommunityPostId ?? null)
@@ -55,7 +53,7 @@ watch(
 )
 
 function changeView(view: string) {
-  const next = resolveViewChange(view, authStore.isAuthenticated)
+  const next = resolveViewChange(view === 'place-detail' ? 'explore' : view, authStore.isAuthenticated)
   activeView.value = next.view as ViewName
   if (next.message) showToast(next.message)
   window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -76,7 +74,7 @@ async function loadAppTrips() {
 
 function openPlace(place: Place) {
   selectedPlace.value = place
-  changeView('place-detail')
+  changeView('explore')
 }
 
 async function openPlaceById(placeId: number) {
@@ -155,7 +153,7 @@ watch(
 )
 
 watch(activeView, (view) => {
-  if (view === 'explore' || view === 'place-detail' || view === 'schedule') {
+  if (view === 'explore' || view === 'schedule') {
     void loadAppTrips()
   }
 })
@@ -173,15 +171,14 @@ watch(activeView, (view) => {
   <main class="page-shell" :class="activeView === 'explore' ? 'pb-0' : 'pb-24 md:pb-0'">
     <Transition name="page-fade" mode="out-in">
       <HomePage v-if="activeView === 'home'" key="home" @change="changeView" @open-place="openPlace" />
-      <ExplorePage v-else-if="activeView === 'explore'" key="explore" :access-token="authStore.accessToken" :trips="appTrips" @open-place="openPlace" @saved="showToast" />
-      <PlaceDetailPage
-        v-else-if="activeView === 'place-detail'"
-        key="place-detail"
-        :place="selectedPlace"
-        :current-user="currentUser"
+      <ExplorePage
+        v-else-if="activeView === 'explore'"
+        key="explore"
         :access-token="authStore.accessToken"
         :trips="appTrips"
-        @change="changeView"
+        :target-place="selectedPlace"
+        @open-place="openPlace"
+        @close-place="selectedPlace = null"
         @saved="showToast"
       />
       <SchedulePage v-else-if="activeView === 'schedule'" key="schedule" :current-user="currentUser" :access-token="authStore.accessToken" @open-trip="openTrip" @saved="showToast" />

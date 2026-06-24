@@ -55,6 +55,16 @@ describe('viewState', () => {
     expect(restored.activeView).toBe('community')
   })
 
+  it('redirects the retired place detail route to explore', () => {
+    const restored = loadViewState(
+      { getItem: () => JSON.stringify({ activeView: 'place-detail' }) },
+      '/place-detail',
+      '',
+    )
+
+    expect(restored.activeView).toBe('explore')
+  })
+
   it('keeps backwards compatibility with old URL hashes', () => {
     const restored = loadViewState(
       { getItem: () => JSON.stringify({ activeView: 'schedule' }) },
