@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { CalendarCheck, ChevronDown, Link, ListOrdered, LoaderCircle, MapPin, Pencil, Plus, Search, Send, Sparkles, Trash2, UserCog, X } from 'lucide-vue-next'
+import { CalendarCheck, ChevronDown, ChevronLeft, ChevronRight, Link, ListOrdered, LoaderCircle, MapPin, Pencil, Plus, Search, Send, Sparkles, Trash2, UserCog, X } from 'lucide-vue-next'
 import type { Trip } from '@/entities/travel/model/travel'
 import type { AuthUser } from '@/entities/auth/api/authApi'
 import { createChatMessagePayload, createChatSubscribePayload, fetchChatMessages, getChatSocketUrl } from '@/entities/chat/api/chatApi'
@@ -89,6 +89,9 @@ const hasNewSuggestions = ref(false)
 const aiError = ref('')
 const aiNoResult = ref<AiNoResultNotice | null>(null)
 const additionalRequest = ref('')
+const AI_SUGGESTIONS_PER_PAGE = 3
+const aiSuggestionPage = ref(1)
+const voteCreationTarget = ref<AiSuggestion | null>(null)
 const activeVote = ref<VoteResponse | null>(null)
 const isLoadingVote = ref(false)
 const isCastingVote = ref(false)
@@ -148,9 +151,14 @@ const scheduleGroups = computed(() => {
   })
   return Array.from(groups, ([date, items]) => ({ date, items }))
 })
+const aiSuggestionPageCount = computed(() => Math.max(1, Math.ceil(suggestions.value.length / AI_SUGGESTIONS_PER_PAGE)))
+const pagedSuggestions = computed(() => {
+  const start = (aiSuggestionPage.value - 1) * AI_SUGGESTIONS_PER_PAGE
+  return suggestions.value.slice(start, start + AI_SUGGESTIONS_PER_PAGE)
+})
 const suggestionGroups = computed(() => {
   const groups = new Map<number, AiSuggestion[]>()
-  suggestions.value.forEach((suggestion) => {
+  pagedSuggestions.value.forEach((suggestion) => {
     groups.set(suggestion.analysisRunId, [...(groups.get(suggestion.analysisRunId) ?? []), suggestion])
   })
   return Array.from(groups, ([analysisRunId, items]) => ({ analysisRunId, items }))
@@ -592,6 +600,7 @@ async function loadAiSuggestions(status: AiSuggestionStatus = selectedStatus.val
   aiError.value = ''
   try {
     suggestions.value = await getAiSuggestions(props.accessToken, props.trip.id, status)
+    aiSuggestionPage.value = 1
   } catch (error) {
     aiError.value = error instanceof Error ? error.message : 'AI 일정 제안을 불러오지 못했습니다.'
     emit('saved', aiError.value)
@@ -602,6 +611,7 @@ async function loadAiSuggestions(status: AiSuggestionStatus = selectedStatus.val
 
 async function selectAiStatus(status: AiSuggestionStatus) {
   selectedStatus.value = status
+  aiSuggestionPage.value = 1
   hasNewSuggestions.value = false
   await loadAiSuggestions(status)
 }
@@ -619,6 +629,7 @@ async function requestAiAnalysis() {
     })
     selectedStatus.value = 'PENDING'
     suggestions.value = result.suggestions
+    aiSuggestionPage.value = 1
     additionalRequest.value = ''
     if (result.status === 'NO_RESULT') {
       hasNewSuggestions.value = false
@@ -674,10 +685,14 @@ async function rejectSuggestion(suggestion: AiSuggestion) {
   }
 }
 
-async function createSuggestionVote(suggestion: AiSuggestion) {
-  if (!props.accessToken || !props.trip?.id || !isTeamTrip.value) return
-  if (!window.confirm(`"${suggestion.title}" 제안을 팀 투표에 올릴까요?`)) return
+function openCreateSuggestionVote(suggestion: AiSuggestion) {
+  if (!isTeamTrip.value) return
+  voteCreationTarget.value = suggestion
+}
 
+async function createSuggestionVote() {
+  if (!props.accessToken || !props.trip?.id || !isTeamTrip.value || !voteCreationTarget.value) return
+  const suggestion = voteCreationTarget.value
   creatingVoteSuggestionIds.value = setSuggestionProcessing(
     creatingVoteSuggestionIds.value,
     suggestion.aiSuggestionId,
@@ -685,6 +700,7 @@ async function createSuggestionVote(suggestion: AiSuggestion) {
   )
   try {
     await createAiSuggestionVote(props.accessToken, props.trip.id, suggestion.aiSuggestionId)
+    voteCreationTarget.value = null
     selectedStatus.value = 'VOTING'
     await loadAiSuggestions('VOTING')
     emit('saved', 'AI 일정 제안을 투표에 올렸습니다.')
@@ -737,7 +753,8 @@ async function closeVote() {
   isClosingVote.value = true
   voteError.value = ''
   try {
-    activeVote.value = await closeTripVote(props.accessToken, props.trip.id, activeVote.value.voteId)
+    await closeTripVote(props.accessToken, props.trip.id, activeVote.value.voteId)
+    activeVote.value = null
     await Promise.all([loadAiSuggestions(selectedStatus.value), loadScheduleItems()])
     emit('saved', '투표를 종료하고 결과를 반영했습니다.')
   } catch (error) {
@@ -985,9 +1002,13 @@ watch(() => [props.accessToken, props.trip?.id], loadChecklistItems)
 watch(() => [props.accessToken, props.trip?.id], () => {
   void resetChat()
   selectedStatus.value = 'PENDING'
+  aiSuggestionPage.value = 1
   hasNewSuggestions.value = false
   aiNoResult.value = null
   void loadAiSuggestions('PENDING')
+})
+watch(aiSuggestionPageCount, (pageCount) => {
+  if (aiSuggestionPage.value > pageCount) aiSuggestionPage.value = pageCount
 })
 onBeforeUnmount(closeChatSocket)
 </script>
@@ -1019,8 +1040,9 @@ onBeforeUnmount(closeChatSocket)
       </div>
     </header>
 
-    <div class="grid gap-4 xl:grid-cols-[280px_1fr_300px]">
-      <aside class="brand-card flex max-h-[680px] min-h-0 flex-col overflow-hidden rounded-xl xl:max-h-[calc(100vh-180px)]">
+    <div class="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,7fr)]">
+      <div class="min-w-0 space-y-4">
+      <aside class="brand-card flex max-h-[680px] min-h-0 flex-col overflow-hidden rounded-xl xl:max-h-[calc(100vh-300px)] xl:min-h-[480px]">
         <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-100 px-4 py-3">
           <h2 class="font-black text-slate-950">전체 일정</h2>
           <div class="flex items-center gap-1.5">
@@ -1080,12 +1102,74 @@ onBeforeUnmount(closeChatSocket)
         </div>
       </aside>
 
+      <section class="brand-card max-h-[340px] overflow-hidden rounded-xl p-4">
+        <div class="flex items-center justify-between">
+          <h3 class="flex items-center gap-2 font-black text-slate-950">
+            <CalendarCheck :size="18" />
+            준비 체크리스트
+          </h3>
+          <span class="text-sm font-black text-brand-500">{{ doneCount }}/{{ checklist.length }} 완료</span>
+        </div>
+        <div class="mt-3 flex gap-2">
+          <input
+            v-model="checklistTitle"
+            data-testid="checklist-title-input"
+            class="brand-input h-10 min-w-0 flex-1 rounded-lg px-3 text-sm outline-none"
+            placeholder="준비물을 입력하세요"
+            :disabled="isSavingChecklist"
+            @keyup.enter="addChecklistItem"
+          />
+          <button
+            class="grid size-10 shrink-0 place-items-center rounded-lg bg-brand-500 text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
+            aria-label="체크리스트 추가"
+            :disabled="isSavingChecklist || !checklistTitle.trim()"
+            @click="addChecklistItem"
+          >
+            <Plus :size="18" />
+          </button>
+        </div>
+        <p v-if="isLoadingChecklist" class="mt-3 rounded-lg bg-brand-50 px-3 py-2 text-sm font-black text-brand-600">
+          체크리스트를 불러오는 중입니다.
+        </p>
+        <p v-else-if="checklist.length === 0" class="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm font-bold text-slate-500">
+          아직 등록된 체크리스트가 없습니다.
+        </p>
+        <div v-else class="mt-3 max-h-[210px] space-y-2 overflow-y-auto pr-1">
+          <div
+            v-for="item in checklist"
+            :key="item.checklistItemId"
+            :data-testid="`checklist-row-${item.checklistItemId}`"
+            class="check-row flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600 transition"
+            :class="item.done ? 'text-slate-400 line-through' : 'hover:bg-brand-50'"
+          >
+            <input
+              :checked="item.done"
+              type="checkbox"
+              class="size-4 accent-brand-500"
+              :data-testid="`checklist-done-${item.checklistItemId}`"
+              @change="toggleChecklistItem(item)"
+            />
+            <span class="min-w-0 flex-1 truncate">{{ item.title }}</span>
+            <button
+              class="grid size-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+              :aria-label="`${item.title} 삭제`"
+              :data-testid="`delete-checklist-${item.checklistItemId}`"
+              :disabled="isSavingChecklist"
+              @click="removeChecklistItem(item)"
+            >
+              <Trash2 :size="15" />
+            </button>
+          </div>
+        </div>
+      </section>
+      </div>
+
       <div class="min-w-0 space-y-4">
-      <section class="brand-card grid min-h-[520px] grid-rows-[52px_1fr_72px] overflow-hidden rounded-xl">
+      <section data-testid="schedule-chat-section" class="brand-card grid h-[520px] grid-rows-[52px_minmax(0,1fr)_72px] overflow-hidden rounded-xl">
         <div class="border-b border-slate-200 bg-slate-100 px-4 py-3">
           <h2 class="font-black text-slate-950">일정 조율 채팅</h2>
         </div>
-        <div ref="chatListEl" class="space-y-4 overflow-y-auto p-4">
+        <div ref="chatListEl" data-testid="schedule-chat-list" class="min-h-0 space-y-4 overflow-y-auto p-4">
           <p v-if="isLoadingMessages" class="rounded-lg bg-brand-50 px-3 py-2 text-sm font-black text-brand-600">
             이전 채팅을 불러오는 중입니다.
           </p>
@@ -1224,7 +1308,6 @@ onBeforeUnmount(closeChatSocket)
                     <p class="text-xs font-black text-brand-500">장소</p>
                     <p class="mt-1 font-black text-slate-900">{{ suggestion.suggestedPlaceName }}</p>
                     <p v-if="suggestion.suggestedRegionHint" class="mt-0.5 text-xs font-semibold text-slate-500">{{ suggestion.suggestedRegionHint }}</p>
-                    <p v-if="suggestion.suggestedPlaceId === null" class="mt-2 text-xs font-bold text-amber-600">DB에 연결되지 않은 장소지만 자유 일정으로 적용할 수 있습니다.</p>
                   </div>
                   <p v-if="suggestion.summary" class="mt-3 text-sm font-semibold leading-6 text-slate-700">{{ suggestion.summary }}</p>
                   <p v-if="suggestion.reason" class="mt-2 text-xs font-semibold leading-5 text-slate-500">제안 이유: {{ suggestion.reason }}</p>
@@ -1252,7 +1335,7 @@ onBeforeUnmount(closeChatSocket)
                         :data-testid="`create-ai-vote-${suggestion.aiSuggestionId}`"
                         class="rounded-lg bg-brand-500 px-3 py-2 text-xs font-black text-white hover:bg-brand-600 disabled:opacity-50"
                         :disabled="creatingVoteSuggestionIds.includes(suggestion.aiSuggestionId)"
-                        @click="createSuggestionVote(suggestion)"
+                        @click="openCreateSuggestionVote(suggestion)"
                       >
                         {{ creatingVoteSuggestionIds.includes(suggestion.aiSuggestionId) ? '생성 중' : '투표 올리기' }}
                       </button>
@@ -1279,10 +1362,18 @@ onBeforeUnmount(closeChatSocket)
                         투표 보기
                       </button>
                     </template>
-                    <span v-else-if="suggestion.status === 'APPLIED'" class="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700">
+                    <span
+                      v-else-if="suggestion.status === 'APPLIED'"
+                      :data-testid="`ai-applied-status-${suggestion.aiSuggestionId}`"
+                      class="inline-flex min-h-8 items-center justify-center rounded-lg bg-emerald-50 px-3 text-xs font-black leading-none text-emerald-700"
+                    >
                       일정 반영 완료
                     </span>
-                    <span v-else-if="suggestion.status === 'REJECTED'" class="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600">
+                    <span
+                      v-else-if="suggestion.status === 'REJECTED'"
+                      :data-testid="`ai-rejected-status-${suggestion.aiSuggestionId}`"
+                      class="inline-flex min-h-8 items-center justify-center rounded-lg bg-slate-100 px-3 text-xs font-black leading-none text-slate-600"
+                    >
                       거절됨
                     </span>
                   </div>
@@ -1290,71 +1381,41 @@ onBeforeUnmount(closeChatSocket)
               </div>
             </section>
           </div>
+
+          <div
+            v-if="suggestions.length > AI_SUGGESTIONS_PER_PAGE"
+            class="mt-5 flex items-center justify-center gap-3 border-t border-slate-200 pt-4"
+          >
+            <button
+              data-testid="ai-page-previous"
+              class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-600 disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="aiSuggestionPage === 1"
+              @click="aiSuggestionPage -= 1"
+            >
+              <ChevronLeft :size="15" />
+              이전
+            </button>
+            <span
+              data-testid="ai-page-indicator"
+              aria-live="polite"
+              class="min-w-14 text-center text-xs font-black text-slate-500"
+            >
+              {{ aiSuggestionPage }} / {{ aiSuggestionPageCount }}
+            </span>
+            <button
+              data-testid="ai-page-next"
+              class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-600 disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="aiSuggestionPage === aiSuggestionPageCount"
+              @click="aiSuggestionPage += 1"
+            >
+              다음
+              <ChevronRight :size="15" />
+            </button>
+          </div>
         </div>
       </section>
       </div>
 
-      <aside class="space-y-4">
-        <section class="brand-card rounded-xl p-4">
-          <div class="flex items-center justify-between">
-            <h3 class="flex items-center gap-2 font-black text-slate-950">
-              <CalendarCheck :size="18" />
-              준비 체크리스트
-            </h3>
-            <span class="text-sm font-black text-brand-500">{{ doneCount }}/{{ checklist.length }} 완료</span>
-          </div>
-          <div class="mt-3 flex gap-2">
-            <input
-              v-model="checklistTitle"
-              data-testid="checklist-title-input"
-              class="brand-input h-10 min-w-0 flex-1 rounded-lg px-3 text-sm outline-none"
-              placeholder="준비물을 입력하세요"
-              :disabled="isSavingChecklist"
-              @keyup.enter="addChecklistItem"
-            />
-            <button
-              class="grid size-10 shrink-0 place-items-center rounded-lg bg-brand-500 text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
-              aria-label="체크리스트 추가"
-              :disabled="isSavingChecklist || !checklistTitle.trim()"
-              @click="addChecklistItem"
-            >
-              <Plus :size="18" />
-            </button>
-          </div>
-          <p v-if="isLoadingChecklist" class="mt-3 rounded-lg bg-brand-50 px-3 py-2 text-sm font-black text-brand-600">
-            체크리스트를 불러오는 중입니다.
-          </p>
-          <p v-else-if="checklist.length === 0" class="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm font-bold text-slate-500">
-            아직 등록된 체크리스트가 없습니다.
-          </p>
-          <div
-            v-for="item in checklist"
-            v-else
-            :key="item.checklistItemId"
-            :data-testid="`checklist-row-${item.checklistItemId}`"
-            class="check-row mt-3 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600 transition"
-            :class="item.done ? 'text-slate-400 line-through' : 'hover:bg-brand-50'"
-          >
-            <input
-              :checked="item.done"
-              type="checkbox"
-              class="size-4 accent-brand-500"
-              :data-testid="`checklist-done-${item.checklistItemId}`"
-              @change="toggleChecklistItem(item)"
-            />
-            <span class="min-w-0 flex-1 truncate">{{ item.title }}</span>
-            <button
-              class="grid size-8 shrink-0 place-items-center rounded-lg text-slate-300 transition hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-              :aria-label="`${item.title} 삭제`"
-              :data-testid="`delete-checklist-${item.checklistItemId}`"
-              :disabled="isSavingChecklist"
-              @click="removeChecklistItem(item)"
-            >
-              <Trash2 :size="15" />
-            </button>
-          </div>
-        </section>
-      </aside>
     </div>
 
     <Transition name="modal-fade">
@@ -1662,6 +1723,62 @@ onBeforeUnmount(closeChatSocket)
           <div class="mt-4 flex justify-end gap-2">
             <button class="h-10 rounded-lg bg-slate-100 px-4 text-sm font-black text-slate-700" @click="showOrderModal = false">
               닫기
+            </button>
+          </div>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="modal-fade">
+      <div v-if="voteCreationTarget" class="fixed inset-0 z-[95] grid place-items-center bg-slate-900/55 p-4">
+        <section data-testid="create-ai-vote-modal" class="modal-panel w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <p class="text-xs font-black text-brand-500">팀 일정 투표</p>
+              <h2 class="mt-1 text-xl font-black text-slate-950">투표를 올릴까요?</h2>
+            </div>
+            <button
+              class="text-slate-500"
+              aria-label="투표 올리기 모달 닫기"
+              :disabled="creatingVoteSuggestionIds.includes(voteCreationTarget.aiSuggestionId)"
+              @click="voteCreationTarget = null"
+            >
+              <X :size="22" />
+            </button>
+          </div>
+
+          <div class="mt-5 rounded-xl bg-slate-50 p-4">
+            <p class="text-lg font-black text-slate-950">{{ voteCreationTarget.title }}</p>
+            <p class="mt-2 text-sm font-bold text-brand-500">
+              {{ formatSuggestionDate(voteCreationTarget.scheduleDate) }} · {{ formatSuggestionTime(voteCreationTarget.startTime) }}
+              <template v-if="voteCreationTarget.endTime"> ~ {{ formatSuggestionTime(voteCreationTarget.endTime) }}</template>
+            </p>
+            <div v-if="voteCreationTarget.suggestedPlaceName" class="mt-3 rounded-lg bg-brand-50 px-3 py-2">
+              <p class="text-xs font-black text-brand-500">장소</p>
+              <p class="mt-1 text-sm font-black text-slate-900">{{ voteCreationTarget.suggestedPlaceName }}</p>
+            </div>
+          </div>
+
+          <p class="mt-4 text-sm font-semibold leading-6 text-slate-600">
+            팀원들에게 이 일정의 찬반 투표를 요청합니다.
+          </p>
+
+          <div class="mt-5 flex justify-end gap-2">
+            <button
+              data-testid="cancel-create-ai-vote"
+              class="h-10 rounded-lg bg-slate-100 px-4 text-sm font-black text-slate-700 disabled:opacity-50"
+              :disabled="creatingVoteSuggestionIds.includes(voteCreationTarget.aiSuggestionId)"
+              @click="voteCreationTarget = null"
+            >
+              취소
+            </button>
+            <button
+              data-testid="confirm-create-ai-vote"
+              class="h-10 rounded-lg bg-brand-500 px-4 text-sm font-black text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="creatingVoteSuggestionIds.includes(voteCreationTarget.aiSuggestionId)"
+              @click="createSuggestionVote"
+            >
+              {{ creatingVoteSuggestionIds.includes(voteCreationTarget.aiSuggestionId) ? '생성 중' : '투표 올리기' }}
             </button>
           </div>
         </section>
