@@ -72,6 +72,14 @@ function cellAlignmentClass(alignment: 'LEFT' | 'CENTER' | 'RIGHT' | undefined, 
   return 'justify-start'
 }
 
+function textCellClass(cell: { alignment?: 'LEFT' | 'CENTER' | 'RIGHT'; bold?: boolean | null }) {
+  return [cellAlignmentClass(cell.alignment, 'TEXT'), cell.bold ? 'font-bold' : 'font-normal']
+}
+
+function textCellStyle(cell: { fontSizePx?: number | null }) {
+  return { fontSize: `${cell.fontSizePx ?? 14}px` }
+}
+
 function syncCommentCount() {
   if (!post.value) return
   post.value = {
@@ -305,13 +313,14 @@ onMounted(loadPost)
               <img
                 :src="resolveCommunityImageUrl(cell.imageUrl)"
                 :alt="post.title"
-                class="block h-auto max-h-[520px] max-w-full rounded-xl"
+                class="block h-auto max-h-[520px] max-w-full"
               />
             </div>
             <p
               v-else-if="cell.cellType === 'TEXT'"
               class="whitespace-pre-line break-words [overflow-wrap:anywhere]"
-              :class="cellAlignmentClass(cell.alignment, 'TEXT')"
+              :class="textCellClass(cell)"
+              :style="textCellStyle(cell)"
             >
               {{ cell.textContent }}
             </p>

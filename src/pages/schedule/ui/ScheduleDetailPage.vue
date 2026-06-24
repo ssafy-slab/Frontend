@@ -1310,7 +1310,6 @@ onBeforeUnmount(closeChatSocket)
                     <p v-if="suggestion.suggestedRegionHint" class="mt-0.5 text-xs font-semibold text-slate-500">{{ suggestion.suggestedRegionHint }}</p>
                   </div>
                   <p v-if="suggestion.summary" class="mt-3 text-sm font-semibold leading-6 text-slate-700">{{ suggestion.summary }}</p>
-                  <p v-if="suggestion.reason" class="mt-2 text-xs font-semibold leading-5 text-slate-500">제안 이유: {{ suggestion.reason }}</p>
 
                   <div class="mt-4 flex flex-wrap justify-end gap-2">
                     <button

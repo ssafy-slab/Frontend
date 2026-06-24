@@ -218,22 +218,22 @@ onBeforeUnmount(() => {
         v-for="post in posts"
         :key="post.postId"
         data-testid="community-card"
-        class="brand-card flex h-[352px] cursor-pointer flex-col overflow-hidden rounded-xl transition hover:-translate-y-0.5 hover:border-brand-500"
+        class="brand-card flex min-h-[330px] cursor-pointer flex-col overflow-hidden rounded-xl transition hover:-translate-y-0.5 hover:border-brand-500"
         @click="emit('openPost', post.postId)"
       >
-        <div data-testid="community-card-image" class="h-44 w-full shrink-0 overflow-hidden">
+        <div data-testid="community-card-image" class="aspect-[16/9] w-full shrink-0 overflow-hidden bg-slate-100">
           <img :src="postImageUrl(post.imageUrl)" :alt="post.title" class="h-full w-full object-cover" />
         </div>
-        <div data-testid="community-card-body" class="flex flex-1 flex-col p-3">
+        <div data-testid="community-card-body" class="flex flex-1 flex-col px-4 py-4">
           <p class="text-xs font-black text-brand-500">{{ categoryLabel(post.category) }}</p>
           <h2 class="mt-1.5 line-clamp-2 min-h-10 text-base font-black leading-snug text-slate-950">{{ post.title }}</h2>
-          <p data-testid="community-card-excerpt" class="mt-1.5 line-clamp-2 min-h-9 text-xs font-semibold leading-[18px] text-slate-500">
+          <p data-testid="community-card-excerpt" class="mb-2 mt-2 line-clamp-2 text-sm font-semibold leading-5 text-slate-600">
             {{ post.excerpt || '' }}
           </p>
-          <p data-testid="community-card-place" class="mt-2 min-h-4 text-xs font-black text-emerald-600">
-            {{ post.placeName ? `# ${post.placeName}` : '' }}
+          <p v-if="post.placeName" data-testid="community-card-place" class="mb-2 mt-3 w-fit max-w-full truncate rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-700">
+            # {{ post.placeName }}
           </p>
-          <div data-testid="community-card-footer" class="mt-auto flex items-center justify-between pt-3 text-xs font-bold text-slate-500">
+          <div data-testid="community-card-footer" class="mt-auto flex items-center justify-between border-t border-slate-100 pt-4 text-xs font-bold text-slate-500">
             <span class="flex min-w-0 items-center gap-1">
               <User :size="14" />
               <span class="truncate">{{ post.authorNickname }}</span>

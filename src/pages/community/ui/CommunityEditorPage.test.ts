@@ -49,7 +49,7 @@ describe('CommunityEditorPage cells', () => {
     await wrapper.get('[data-testid="community-title-input"]').setValue('Cell trip')
     await wrapper.get('[data-testid="community-cell-text-0"]').setValue('First story')
     await wrapper.get('[data-testid="cell-align-center-0"]').trigger('click')
-    await wrapper.get('[data-testid="add-image-cell"]').trigger('click')
+    await wrapper.get('[data-testid="insert-image-cell-after-0"]').trigger('click')
     const file = new File(['image'], 'trip.jpg', { type: 'image/jpeg' })
     const imageInput = wrapper.get('[data-testid="community-cell-image-1"]').element as HTMLInputElement
     Object.defineProperty(imageInput, 'files', { value: [file] })
@@ -64,8 +64,8 @@ describe('CommunityEditorPage cells', () => {
       content: 'First story',
       imageUrl: 'https://example.com/cell.jpg',
       cells: [
-        { cellType: 'TEXT', textContent: 'First story', imageUrl: null, alignment: 'CENTER' },
-        { cellType: 'IMAGE', textContent: null, imageUrl: 'https://example.com/cell.jpg', alignment: 'RIGHT' },
+        { cellType: 'TEXT', textContent: 'First story', imageUrl: null, alignment: 'CENTER', fontSizePx: 14, bold: false },
+        { cellType: 'IMAGE', textContent: null, imageUrl: 'https://example.com/cell.jpg', alignment: 'RIGHT', fontSizePx: 0, bold: false },
       ],
     }))
   })
@@ -79,7 +79,7 @@ describe('CommunityEditorPage cells', () => {
     await wrapper.get('[data-testid="cell-align-center-0"]').trigger('click')
     expect(wrapper.get('[data-testid="community-cell-text-0"]').classes()).toContain('text-center')
 
-    await wrapper.get('[data-testid="add-image-cell"]').trigger('click')
+    await wrapper.get('[data-testid="insert-image-cell-after-0"]').trigger('click')
     const file = new File(['image'], 'aligned.jpg', { type: 'image/jpeg' })
     const input = wrapper.get('[data-testid="community-cell-image-1"]').element as HTMLInputElement
     Object.defineProperty(input, 'files', { value: [file] })
@@ -89,13 +89,65 @@ describe('CommunityEditorPage cells', () => {
     expect(wrapper.get('img[alt="셀 이미지 미리보기"]').element.parentElement?.classList.contains('justify-end')).toBe(true)
   })
 
+  it('creates text cells with selected font size and bold style', async () => {
+    const wrapper = mount(CommunityEditorPage, {
+      props: { accessToken: 'token' },
+      global: { stubs: { Transition: false } },
+    })
+
+    await wrapper.get('[data-testid="community-title-input"]').setValue('Styled story')
+    await wrapper.get('[data-testid="community-cell-text-0"]').setValue('Big bold moment')
+    await wrapper.get('[data-testid="cell-font-size-0"]').setValue('32')
+    await wrapper.get('[data-testid="cell-bold-0"]').trigger('click')
+    await wrapper.get('[data-testid="submit-community-post"]').trigger('click')
+    await flushPromises()
+
+    const textInput = wrapper.get('[data-testid="community-cell-text-0"]')
+    expect(textInput.attributes('style')).toContain('font-size: 32px')
+    expect(textInput.classes()).toContain('font-bold')
+    expect(createCommunityPost).toHaveBeenCalledWith('token', expect.objectContaining({
+      cells: [
+        { cellType: 'TEXT', textContent: 'Big bold moment', imageUrl: null, alignment: 'LEFT', fontSizePx: 32, bold: true },
+      ],
+    }))
+  })
+
+  it('inserts a new text cell directly after the current cell', async () => {
+    const wrapper = mount(CommunityEditorPage, {
+      props: { accessToken: 'token' },
+      global: { stubs: { Transition: false } },
+    })
+
+    await wrapper.get('[data-testid="community-cell-text-0"]').setValue('First')
+    await wrapper.get('[data-testid="insert-text-cell-after-0"]').trigger('click')
+    await wrapper.get('[data-testid="community-cell-text-1"]').setValue('Second')
+    await wrapper.get('[data-testid="insert-text-cell-after-0"]').trigger('click')
+    await wrapper.get('[data-testid="community-cell-text-1"]').setValue('Inserted')
+
+    const textCells = wrapper.findAll('[data-testid^="community-cell-text-"]')
+    expect(textCells.map((cell) => (cell.element as HTMLTextAreaElement).value)).toEqual(['First', 'Inserted', 'Second'])
+  })
+
+  it('allows creating more than five cells', async () => {
+    const wrapper = mount(CommunityEditorPage, {
+      props: { accessToken: 'token' },
+      global: { stubs: { Transition: false } },
+    })
+
+    for (let index = 0; index < 6; index += 1) {
+      await wrapper.get(`[data-testid="insert-text-cell-after-${index}"]`).trigger('click')
+    }
+
+    expect(wrapper.findAll('[data-testid^="community-cell-text-"]')).toHaveLength(7)
+  })
+
   it('previews the selected original image without a gray backing layer', async () => {
     const wrapper = mount(CommunityEditorPage, {
       props: { accessToken: 'token' },
       global: { stubs: { Transition: false } },
     })
 
-    await wrapper.get('[data-testid="add-image-cell"]').trigger('click')
+    await wrapper.get('[data-testid="insert-image-cell-after-0"]').trigger('click')
     const file = new File(['image'], 'original.jpg', { type: 'image/jpeg' })
     const imageInput = wrapper.get('[data-testid="community-cell-image-1"]').element as HTMLInputElement
     Object.defineProperty(imageInput, 'files', { value: [file] })

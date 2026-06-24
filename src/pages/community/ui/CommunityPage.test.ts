@@ -45,7 +45,7 @@ describe('CommunityPage card layout', () => {
         excerpt: 'Description',
         imageUrl: 'https://example.com/card-2.jpg',
         placeId: 10,
-        placeName: '제주 가족 여행',
+        placeName: 'Jeju family trip',
         authorNickname: 'writer',
         viewCount: 4,
         likeCount: 5,
@@ -56,7 +56,7 @@ describe('CommunityPage card layout', () => {
     ])
   })
 
-  it('uses a fixed edge-to-edge image frame and bottom-aligned card footer', async () => {
+  it('uses a stable image ratio and naturally spaced card footer', async () => {
     const wrapper = mount(CommunityPage)
     await flushPromises()
 
@@ -66,24 +66,25 @@ describe('CommunityPage card layout', () => {
     const body = wrapper.get('[data-testid="community-card-body"]')
     const footer = wrapper.get('[data-testid="community-card-footer"]')
 
-    expect(card.classes()).toEqual(expect.arrayContaining(['flex', 'h-[352px]', 'flex-col']))
+    expect(card.classes()).toEqual(expect.arrayContaining(['flex', 'min-h-[330px]', 'flex-col']))
+    expect(card.classes()).not.toContain('h-[352px]')
     expect(card.classes()).not.toContain('h-96')
     expect(card.classes()).not.toContain('h-full')
-    expect(imageFrame.classes()).toEqual(expect.arrayContaining(['h-44', 'overflow-hidden']))
+    expect(imageFrame.classes()).toEqual(expect.arrayContaining(['aspect-[16/9]', 'overflow-hidden', 'bg-slate-100']))
+    expect(imageFrame.classes()).not.toContain('h-44')
     expect(imageFrame.classes()).not.toContain('h-52')
-    expect(imageFrame.classes()).not.toContain('bg-slate-100')
     expect(image.classes()).toEqual(expect.arrayContaining(['h-full', 'w-full', 'object-cover']))
     expect(image.classes()).not.toContain('object-contain')
-    expect(body.classes()).toEqual(expect.arrayContaining(['flex', 'flex-1', 'flex-col', 'p-3']))
+    expect(body.classes()).toEqual(expect.arrayContaining(['flex', 'flex-1', 'flex-col', 'px-4', 'py-4']))
     expect(footer.classes()).toContain('mt-auto')
-    expect(footer.classes()).toContain('pt-3')
-    expect(wrapper.get('[data-testid="community-card-excerpt"]').classes()).toContain('min-h-9')
-    expect(wrapper.get('[data-testid="community-card-place"]').classes()).toContain('min-h-4')
+    expect(footer.classes()).toContain('pt-4')
+    expect(footer.classes()).toContain('border-t')
+    expect(wrapper.get('[data-testid="community-card-excerpt"]').classes()).not.toContain('min-h-9')
+    expect(wrapper.get('[data-testid="community-card-excerpt"]').classes()).toContain('mb-2')
 
     const placeRows = wrapper.findAll('[data-testid="community-card-place"]')
-    expect(placeRows).toHaveLength(2)
-    expect(placeRows[0]?.text()).toBe('')
-    expect(placeRows[1]?.text()).toBe('# 제주 가족 여행')
-    expect(placeRows.every((row) => row.classes().includes('min-h-4'))).toBe(true)
+    expect(placeRows).toHaveLength(1)
+    expect(placeRows[0]?.text()).toBe('# Jeju family trip')
+    expect(placeRows[0]?.classes()).toEqual(expect.arrayContaining(['mb-2', 'rounded-full', 'bg-emerald-50', 'px-2.5', 'py-1']))
   })
 })

@@ -27,6 +27,8 @@ export type CommunityPostCell = {
   textContent: string | null
   imageUrl: string | null
   alignment?: CommunityCellAlignment
+  fontSizePx?: number | null
+  bold?: boolean | null
 }
 
 export type CommunityPostDetail = Omit<CommunityPostSummary, 'excerpt'> & {
@@ -39,6 +41,8 @@ export type CommunityPostCellPayload = {
   textContent?: string | null
   imageUrl?: string | null
   alignment?: CommunityCellAlignment
+  fontSizePx?: number | null
+  bold?: boolean | null
 }
 
 export type CommunityPostPayload = {

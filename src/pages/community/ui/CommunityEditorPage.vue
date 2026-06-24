@@ -1,6 +1,6 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, ImagePlus, MapPin, Plus, Search, Send, Trash2, X } from 'lucide-vue-next'
+import { AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowLeft, ArrowUp, Bold, Check, ChevronDown, ImagePlus, MapPin, Plus, Search, Send, Trash2, X } from 'lucide-vue-next'
 import {
   createCommunityPost,
   fetchCommunityPost,
@@ -34,6 +34,15 @@ const alignmentOptions = [
   { value: 'CENTER' as const, label: '가운데 정렬', icon: AlignCenter },
   { value: 'RIGHT' as const, label: '오른쪽 정렬', icon: AlignRight },
 ]
+const fontSizeOptions = [
+  { label: 'H1 32px', value: 32 },
+  { label: 'H2 28px', value: 28 },
+  { label: 'H3 24px', value: 24 },
+  { label: 'H4 20px', value: 20 },
+  { label: 'H5 18px', value: 18 },
+  { label: 'H6 16px', value: 16 },
+  { label: '본문 14px', value: 14 },
+]
 
 type EditorCell = {
   id: number
@@ -43,11 +52,13 @@ type EditorCell = {
   file: File | null
   previewUrl: string
   alignment: CommunityCellAlignment
+  fontSizePx: number
+  bold: boolean
 }
 
 let nextCellId = 1
 
-function createTextCell(textContent = '', alignment: CommunityCellAlignment = 'LEFT'): EditorCell {
+function createTextCell(textContent = '', alignment: CommunityCellAlignment = 'LEFT', fontSizePx = 14, bold = false): EditorCell {
   return {
     id: nextCellId++,
     cellType: 'TEXT',
@@ -56,6 +67,8 @@ function createTextCell(textContent = '', alignment: CommunityCellAlignment = 'L
     file: null,
     previewUrl: '',
     alignment,
+    fontSizePx,
+    bold,
   }
 }
 
@@ -68,6 +81,8 @@ function createImageCell(imageUrl = '', alignment: CommunityCellAlignment = 'LEF
     file: null,
     previewUrl: '',
     alignment,
+    fontSizePx: 14,
+    bold: false,
   }
 }
 
@@ -88,7 +103,6 @@ const isEditMode = computed(() => Boolean(props.editPostId))
 const hasValidCell = computed(() => cells.value.some((cell) => (
   cell.cellType === 'TEXT' ? Boolean(cell.textContent.trim()) : Boolean(cell.file || cell.imageUrl)
 )))
-const canAddCell = computed(() => cells.value.length < 5)
 const canSubmit = computed(() => form.title.trim().length > 0 && hasValidCell.value && !submitting.value && !loadingPost.value)
 
 let placeRequestId = 0
@@ -107,7 +121,7 @@ async function loadEditPost() {
         .sort((left, right) => left.sortOrder - right.sortOrder)
         .map((cell) => cell.cellType === 'IMAGE'
           ? createImageCell(cell.imageUrl ?? '', cell.alignment ?? 'LEFT')
-          : createTextCell(cell.textContent ?? '', cell.alignment ?? 'LEFT'))
+          : createTextCell(cell.textContent ?? '', cell.alignment ?? 'LEFT', cell.fontSizePx ?? 14, cell.bold ?? false))
       : [
         ...(post.imageUrl ? [createImageCell(post.imageUrl)] : []),
         ...(post.content ? [createTextCell(post.content)] : []),
@@ -170,14 +184,14 @@ function clearCellImage(index: number) {
   cell.imageUrl = ''
 }
 
-function addTextCell() {
-  if (!canAddCell.value) return
-  cells.value.push(createTextCell())
+function addTextCell(afterIndex?: number) {
+  const insertIndex = typeof afterIndex === 'number' ? afterIndex + 1 : cells.value.length
+  cells.value.splice(insertIndex, 0, createTextCell())
 }
 
-function addImageCell() {
-  if (!canAddCell.value) return
-  cells.value.push(createImageCell())
+function addImageCell(afterIndex?: number) {
+  const insertIndex = typeof afterIndex === 'number' ? afterIndex + 1 : cells.value.length
+  cells.value.splice(insertIndex, 0, createImageCell())
 }
 
 function removeCell(index: number) {
@@ -201,6 +215,17 @@ function setCellAlignment(index: number, alignment: CommunityCellAlignment) {
   if (cell) cell.alignment = alignment
 }
 
+function setCellFontSize(index: number, event: Event) {
+  const cell = cells.value[index]
+  const value = Number((event.target as HTMLSelectElement).value)
+  if (cell && fontSizeOptions.some((option) => option.value === value)) cell.fontSizePx = value
+}
+
+function toggleCellBold(index: number) {
+  const cell = cells.value[index]
+  if (cell) cell.bold = !cell.bold
+}
+
 function alignmentTextClass(alignment: CommunityCellAlignment) {
   if (alignment === 'CENTER') return 'text-center'
   if (alignment === 'RIGHT') return 'text-right'
@@ -211,6 +236,10 @@ function alignmentFlexClass(alignment: CommunityCellAlignment) {
   if (alignment === 'CENTER') return 'justify-center'
   if (alignment === 'RIGHT') return 'justify-end'
   return 'justify-start'
+}
+
+function textCellStyle(cell: EditorCell) {
+  return { fontSize: `${cell.fontSizePx}px` }
 }
 
 function visibleCellImageUrl(cell: EditorCell) {
@@ -271,14 +300,14 @@ async function submitPost() {
     for (const cell of cells.value) {
       if (cell.cellType === 'TEXT') {
         const textContent = cell.textContent.trim()
-        if (textContent) payloadCells.push({ cellType: 'TEXT', textContent, imageUrl: null, alignment: cell.alignment })
+        if (textContent) payloadCells.push({ cellType: 'TEXT', textContent, imageUrl: null, alignment: cell.alignment, fontSizePx: cell.fontSizePx, bold: cell.bold })
         continue
       }
       let imageUrl = cell.imageUrl
       if (cell.file) {
         imageUrl = (await uploadCommunityImage(props.accessToken, cell.file)).imageUrl
       }
-      if (imageUrl) payloadCells.push({ cellType: 'IMAGE', textContent: null, imageUrl, alignment: cell.alignment })
+      if (imageUrl) payloadCells.push({ cellType: 'IMAGE', textContent: null, imageUrl, alignment: cell.alignment, fontSizePx: 0, bold: false })
     }
     const content = payloadCells.find((cell) => cell.cellType === 'TEXT')?.textContent ?? undefined
     const imageUrl = payloadCells.find((cell) => cell.cellType === 'IMAGE')?.imageUrl ?? undefined
@@ -349,87 +378,115 @@ onBeforeUnmount(() => {
         </label>
 
         <section>
-          <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div class="mb-3 flex items-center">
             <span class="block text-sm font-black text-slate-950">본문 셀</span>
-            <div class="flex gap-2">
-              <button type="button" data-testid="add-text-cell" class="inline-flex h-9 items-center gap-1 rounded-lg bg-slate-100 px-3 text-xs font-black text-slate-700 disabled:opacity-50" :disabled="!canAddCell" @click="addTextCell">
-                <Plus :size="14" />
-                글
-              </button>
-              <button type="button" data-testid="add-image-cell" class="inline-flex h-9 items-center gap-1 rounded-lg bg-slate-100 px-3 text-xs font-black text-slate-700 disabled:opacity-50" :disabled="!canAddCell" @click="addImageCell">
-                <ImagePlus :size="14" />
-                사진
-              </button>
-            </div>
           </div>
 
-          <div class="grid gap-3">
-            <div v-for="(cell, index) in cells" :key="cell.id" class="rounded-xl border border-slate-200 bg-white p-3">
-              <div class="mb-2 flex items-center justify-between gap-2">
-                <span class="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-600">
-                  {{ cell.cellType === 'TEXT' ? '글' : '사진' }} {{ index + 1 }}
-                </span>
-                <div class="flex items-center gap-1">
-                  <span class="mr-1 flex overflow-hidden rounded-lg border border-slate-200">
-                    <button
-                      v-for="option in alignmentOptions"
-                      :key="option.value"
-                      type="button"
-                      :data-testid="`cell-align-${option.value.toLowerCase()}-${index}`"
-                      class="grid size-8 place-items-center transition"
-                      :class="cell.alignment === option.value ? 'bg-brand-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'"
-                      :aria-label="option.label"
-                      :aria-pressed="cell.alignment === option.value"
-                      @click="setCellAlignment(index, option.value)"
-                    >
-                      <component :is="option.icon" :size="14" />
+          <div class="mx-auto w-full max-w-[680px]">
+            <div v-for="(cell, index) in cells" :key="cell.id" class="relative">
+              <div class="relative z-10 rounded-lg border border-slate-200 bg-white shadow-sm transition focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100">
+                <div class="flex items-center justify-end gap-2 border-b border-slate-100 px-3 py-2">
+                  <div class="flex flex-wrap items-center justify-end gap-1">
+                    <template v-if="cell.cellType === 'TEXT'">
+                      <span class="select-wrap">
+                        <select
+                          :value="cell.fontSizePx"
+                          :data-testid="`cell-font-size-${index}`"
+                          class="select-control h-8 rounded-lg border border-slate-200 bg-white px-2 pr-7 text-xs font-black text-slate-700 outline-none"
+                          @change="setCellFontSize(index, $event)"
+                        >
+                          <option v-for="option in fontSizeOptions" :key="option.value" :value="option.value">
+                            {{ option.label }}
+                          </option>
+                        </select>
+                        <ChevronDown :size="13" class="select-chevron" />
+                      </span>
+                      <button
+                        type="button"
+                        :data-testid="`cell-bold-${index}`"
+                        class="grid size-8 place-items-center rounded-lg border border-slate-200 transition"
+                        :class="cell.bold ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'"
+                        :aria-pressed="cell.bold"
+                        @click="toggleCellBold(index)"
+                      >
+                        <Bold :size="14" />
+                      </button>
+                    </template>
+                    <span class="mr-1 flex overflow-hidden rounded-lg border border-slate-200">
+                      <button
+                        v-for="option in alignmentOptions"
+                        :key="option.value"
+                        type="button"
+                        :data-testid="`cell-align-${option.value.toLowerCase()}-${index}`"
+                        class="grid size-8 place-items-center transition"
+                        :class="cell.alignment === option.value ? 'bg-brand-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'"
+                        :aria-label="option.label"
+                        :aria-pressed="cell.alignment === option.value"
+                        @click="setCellAlignment(index, option.value)"
+                      >
+                        <component :is="option.icon" :size="14" />
+                      </button>
+                    </span>
+                    <button type="button" class="grid size-8 place-items-center rounded-lg bg-slate-50 text-slate-500 disabled:opacity-30" :disabled="index === 0" @click="moveCell(index, -1)">
+                      <ArrowUp :size="14" />
                     </button>
-                  </span>
-                  <button type="button" class="grid size-8 place-items-center rounded-lg bg-slate-50 text-slate-500 disabled:opacity-30" :disabled="index === 0" @click="moveCell(index, -1)">
-                    <ArrowUp :size="14" />
-                  </button>
-                  <button type="button" class="grid size-8 place-items-center rounded-lg bg-slate-50 text-slate-500 disabled:opacity-30" :disabled="index === cells.length - 1" @click="moveCell(index, 1)">
-                    <ArrowDown :size="14" />
-                  </button>
-                  <button type="button" class="grid size-8 place-items-center rounded-lg bg-red-50 text-red-500 disabled:opacity-30" :disabled="cells.length === 1" @click="removeCell(index)">
-                    <Trash2 :size="14" />
-                  </button>
+                    <button type="button" class="grid size-8 place-items-center rounded-lg bg-slate-50 text-slate-500 disabled:opacity-30" :disabled="index === cells.length - 1" @click="moveCell(index, 1)">
+                      <ArrowDown :size="14" />
+                    </button>
+                    <button type="button" class="grid size-8 place-items-center rounded-lg bg-red-50 text-red-500 disabled:opacity-30" :disabled="cells.length === 1" @click="removeCell(index)">
+                      <Trash2 :size="14" />
+                    </button>
+                  </div>
+                </div>
+
+                <textarea
+                  v-if="cell.cellType === 'TEXT'"
+                  v-model="cell.textContent"
+                  :data-testid="`community-cell-text-${index}`"
+                  class="w-full resize-none border-0 bg-white px-4 py-4 leading-relaxed text-slate-900 outline-none"
+                  :class="[alignmentTextClass(cell.alignment), cell.bold ? 'font-bold' : 'font-normal']"
+                  :style="textCellStyle(cell)"
+                  placeholder="공유하고 싶은 여행 이야기를 적어주세요."
+                />
+
+                <div v-else>
+                  <label
+                    v-if="!visibleCellImageUrl(cell)"
+                    class="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 px-4 text-center transition hover:border-brand-500 hover:bg-brand-50"
+                  >
+                    <ImagePlus :size="24" class="text-brand-500" />
+                    <span class="mt-2 text-sm font-black text-slate-800">사진 선택</span>
+                    <span class="mt-1 text-xs font-bold text-slate-500">JPG, PNG, WebP, GIF · 최대 5MB</span>
+                    <input :data-testid="`community-cell-image-${index}`" type="file" accept="image/*" class="hidden" @change="onCellImageSelected(index, $event)" />
+                  </label>
+                  <div v-else class="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                    <div class="relative flex overflow-hidden" :class="alignmentFlexClass(cell.alignment)">
+                      <img :src="visibleCellImageUrl(cell)" alt="셀 이미지 미리보기" class="block h-auto max-h-80 max-w-full" />
+                      <button class="absolute right-3 top-3 grid size-8 place-items-center rounded-full bg-white/95 text-slate-700 shadow-lg" type="button" aria-label="이미지 제거" @click="clearCellImage(index)">
+                        <X :size="16" />
+                      </button>
+                    </div>
+                    <div class="flex items-center justify-between gap-3 px-3 py-2">
+                      <p class="truncate text-xs font-bold text-slate-500">{{ cell.file?.name || '기존 이미지' }}</p>
+                      <label class="cursor-pointer text-xs font-black text-brand-500 hover:text-brand-600">
+                        다른 사진 선택
+                        <input :data-testid="`community-cell-image-${index}`" type="file" accept="image/*" class="hidden" @change="onCellImageSelected(index, $event)" />
+                      </label>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <textarea
-                v-if="cell.cellType === 'TEXT'"
-                v-model="cell.textContent"
-                :data-testid="`community-cell-text-${index}`"
-                class="brand-input min-h-36 w-full resize-none rounded-lg px-3 py-3 text-sm leading-6 outline-none"
-                :class="alignmentTextClass(cell.alignment)"
-                placeholder="공유하고 싶은 여행 이야기를 적어주세요."
-              />
-
-              <div v-else>
-                <label
-                  v-if="!visibleCellImageUrl(cell)"
-                  class="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 px-4 text-center transition hover:border-brand-500 hover:bg-brand-50"
-                >
-                  <ImagePlus :size="24" class="text-brand-500" />
-                  <span class="mt-2 text-sm font-black text-slate-800">사진 선택</span>
-                  <span class="mt-1 text-xs font-bold text-slate-500">JPG, PNG, WebP, GIF · 최대 5MB</span>
-                  <input :data-testid="`community-cell-image-${index}`" type="file" accept="image/*" class="hidden" @change="onCellImageSelected(index, $event)" />
-                </label>
-                <div v-else class="overflow-hidden rounded-lg border border-slate-200 bg-white">
-                  <div class="relative flex overflow-hidden" :class="alignmentFlexClass(cell.alignment)">
-                    <img :src="visibleCellImageUrl(cell)" alt="셀 이미지 미리보기" class="block h-auto max-h-80 max-w-full" />
-                    <button class="absolute right-3 top-3 grid size-8 place-items-center rounded-full bg-white/95 text-slate-700 shadow-lg" type="button" aria-label="이미지 제거" @click="clearCellImage(index)">
-                      <X :size="16" />
-                    </button>
-                  </div>
-                  <div class="flex items-center justify-between gap-3 px-3 py-2">
-                    <p class="truncate text-xs font-bold text-slate-500">{{ cell.file?.name || '기존 이미지' }}</p>
-                    <label class="cursor-pointer text-xs font-black text-brand-500 hover:text-brand-600">
-                      다른 사진 선택
-                      <input :data-testid="`community-cell-image-${index}`" type="file" accept="image/*" class="hidden" @change="onCellImageSelected(index, $event)" />
-                    </label>
-                  </div>
+              <div class="group relative z-20 -my-3 flex items-center justify-center opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100">
+                <div class="mx-3 flex overflow-hidden rounded-full border border-slate-300 bg-white shadow-sm">
+                  <button type="button" :data-testid="`insert-text-cell-after-${index}`" class="inline-flex h-8 items-center gap-1 px-3 text-xs font-black text-slate-400 transition hover:bg-slate-50 hover:text-slate-900 focus-visible:bg-slate-50 focus-visible:text-slate-900" @click="addTextCell(index)">
+                    <Plus :size="13" />
+                    글
+                  </button>
+                  <button type="button" :data-testid="`insert-image-cell-after-${index}`" class="inline-flex h-8 items-center gap-1 border-l border-slate-200 px-3 text-xs font-black text-slate-400 transition hover:bg-slate-50 hover:text-slate-900 focus-visible:bg-slate-50 focus-visible:text-slate-900" @click="addImageCell(index)">
+                    <ImagePlus :size="13" />
+                    사진
+                  </button>
                 </div>
               </div>
             </div>

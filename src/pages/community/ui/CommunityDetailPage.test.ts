@@ -195,8 +195,8 @@ describe('CommunityDetailPage comments', () => {
         'block',
         'h-auto',
         'max-w-full',
-        'rounded-xl',
       ]))
+      expect(cell.get('img').classes()).not.toContain('rounded-xl')
       expect(cell.get('img').classes()).not.toContain('object-cover')
     }
   })
@@ -239,8 +239,8 @@ describe('CommunityDetailPage comments', () => {
       'block',
       'h-auto',
       'max-w-full',
-      'rounded-xl',
     ]))
+    expect(image.classes()).not.toContain('rounded-xl')
     expect(image.classes()).not.toContain('object-contain')
     expect(image.classes()).not.toContain('object-cover')
   })
