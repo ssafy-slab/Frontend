@@ -5,6 +5,7 @@ import App from './app/App.vue'
 import router from './router'
 import { handleOAuthCallbackRedirect } from './entities/auth/api/oauthCallback'
 import './app/styles/index.css'
+import { useAuthStore } from './stores/auth'
 
 const handledOAuthCallback = handleOAuthCallbackRedirect({
   pathname: window.location.pathname,
@@ -16,9 +17,12 @@ const handledOAuthCallback = handleOAuthCallbackRedirect({
 })
 
 if (!(await handledOAuthCallback)) {
+  const pinia = createPinia()
+  const authStore = useAuthStore(pinia)
+  await authStore.restoreSession()
   const app = createApp(App)
 
-  app.use(createPinia())
+  app.use(pinia)
   app.use(router)
 
   app.mount('#app')

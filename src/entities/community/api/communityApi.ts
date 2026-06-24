@@ -1,3 +1,5 @@
+import { authenticatedFetch } from '@/shared/lib/authenticatedFetch'
+
 export type CommunitySort = 'latest' | 'popular' | 'comments'
 export type CommunityCellAlignment = 'LEFT' | 'CENTER' | 'RIGHT'
 
@@ -117,7 +119,7 @@ function authHeaders(token?: string, hasBody = false) {
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init)
+  const response = await authenticatedFetch(url, init)
   if (!response.ok) {
     if (response.status === 401) throw new Error('로그인이 필요합니다.')
     if (response.status === 403 && url.includes('/community/comments/')) {
@@ -142,7 +144,7 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 async function requestNoContent(url: string, init: RequestInit, failureLabel: string) {
-  const response = await fetch(url, init)
+  const response = await authenticatedFetch(url, init)
   if (!response.ok) {
     if (response.status === 401) throw new Error('로그인이 필요합니다.')
     throw new Error(`${failureLabel}에 실패했습니다. (${response.status})`)
@@ -197,7 +199,7 @@ export function updateCommunityPost(postId: number, token: string, payload: Comm
 }
 
 export async function deleteCommunityPost(postId: number, token: string) {
-  const response = await fetch(buildUrl(`/api/community/posts/${postId}`), {
+  const response = await authenticatedFetch(buildUrl(`/api/community/posts/${postId}`), {
     method: 'DELETE',
     headers: authHeaders(token),
   })
@@ -220,7 +222,7 @@ export function uploadCommunityImage(token: string, file: File) {
 }
 
 export async function toggleCommunityPostLike(postId: number, token: string) {
-  const response = await fetch(buildUrl(`/api/community/posts/${postId}/like`), {
+  const response = await authenticatedFetch(buildUrl(`/api/community/posts/${postId}/like`), {
     method: 'POST',
     headers: authHeaders(token),
   })
@@ -267,7 +269,7 @@ export function updateCommunityComment(commentId: number, token: string, payload
 }
 
 export async function deleteCommunityComment(commentId: number, token: string) {
-  const response = await fetch(buildUrl(`/api/community/comments/${commentId}`), {
+  const response = await authenticatedFetch(buildUrl(`/api/community/comments/${commentId}`), {
     method: 'DELETE',
     headers: authHeaders(token),
   })

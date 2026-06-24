@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import * as authApi from '@/entities/auth/api/authApi'
 import type { AuthResponse, AuthUser, LoginPayload, OAuthProvider, PasswordChangePayload, SignupPayload } from '@/entities/auth/api/authApi'
+import { configureAuthSession } from '@/shared/lib/authenticatedFetch'
 
 const storageKey = 'slap-auth'
 
@@ -57,6 +58,19 @@ export const useAuthStore = defineStore('auth', () => {
     return response.user
   }
 
+  function clearLocalAuth() {
+    accessToken.value = ''
+    tokenType.value = 'Bearer'
+    user.value = null
+    persist()
+  }
+
+  configureAuthSession({
+    getAccessToken: () => accessToken.value,
+    applySession: applyAuth,
+    clearSession: clearLocalAuth,
+  })
+
   async function login(payload: LoginPayload) {
     return applyAuth(await authApi.login(payload))
   }
@@ -83,7 +97,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function deleteAccount() {
     if (!accessToken.value) throw new Error('로그인이 필요합니다.')
     await authApi.deleteAccount(accessToken.value)
-    logout()
+    await logout()
   }
 
   async function changePassword(payload: PasswordChangePayload) {
@@ -91,11 +105,22 @@ export const useAuthStore = defineStore('auth', () => {
     await authApi.changePassword(accessToken.value, payload)
   }
 
-  function logout() {
-    accessToken.value = ''
-    tokenType.value = 'Bearer'
-    user.value = null
-    persist()
+  async function restoreSession() {
+    try {
+      applyAuth(await authApi.refreshSession())
+    } catch {
+      clearLocalAuth()
+    }
+  }
+
+  async function logout() {
+    try {
+      await authApi.logoutSession()
+    } catch {
+      // Local authentication must still be cleared if the server is unreachable.
+    } finally {
+      clearLocalAuth()
+    }
   }
 
   return {
@@ -110,6 +135,7 @@ export const useAuthStore = defineStore('auth', () => {
     updateProfile,
     changePassword,
     deleteAccount,
+    restoreSession,
     logout,
   }
 })

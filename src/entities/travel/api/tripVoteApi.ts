@@ -1,4 +1,5 @@
 import { apiBaseUrl } from '@/shared/lib/apiBaseUrl'
+import { authenticatedFetch } from '@/shared/lib/authenticatedFetch'
 
 export type VoteStatus = 'OPEN' | 'CLOSED' | string
 
@@ -62,7 +63,7 @@ async function readServerMessage(response: Response) {
 }
 
 async function requestVote(path: string, token: string, options: RequestInit = {}) {
-  const response = await fetch(new URL(path, apiBaseUrl).toString(), {
+  const response = await authenticatedFetch(new URL(path, apiBaseUrl).toString(), {
     ...options,
     headers: {
       Authorization: `Bearer ${token}`,

@@ -1,5 +1,6 @@
 import type { AuthResponse } from './authApi'
 import { apiBaseUrl } from '@/shared/lib/apiBaseUrl'
+import { normalizeAuthSession, type AuthSessionPayload } from '@/shared/lib/authenticatedFetch'
 
 const authStorageKey = 'slap-auth'
 const viewStorageKey = 'slap-view-state'
@@ -16,6 +17,7 @@ type OAuthCallbackRedirectOptions = {
 async function exchangeOAuthTicket(ticket: string, fetcher: typeof fetch) {
   const response = await fetcher(new URL('/api/oauth/token', apiBaseUrl).toString(), {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ticket }),
   })
@@ -24,7 +26,7 @@ async function exchangeOAuthTicket(ticket: string, fetcher: typeof fetch) {
     throw new Error('OAuth ticket exchange failed')
   }
 
-  return response.json() as Promise<AuthResponse>
+  return normalizeAuthSession(await response.json() as AuthSessionPayload) as AuthResponse
 }
 
 export async function handleOAuthCallbackRedirect(options: OAuthCallbackRedirectOptions) {

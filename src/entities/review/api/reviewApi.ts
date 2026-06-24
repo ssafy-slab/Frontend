@@ -1,4 +1,5 @@
 import { apiBaseUrl } from '@/shared/lib/apiBaseUrl'
+import { authenticatedFetch } from '@/shared/lib/authenticatedFetch'
 
 export type PlaceReview = {
   reviewId: number
@@ -56,7 +57,7 @@ async function request(
   if (token) headers.Authorization = `Bearer ${token}`
   if (payload) headers['Content-Type'] = 'application/json'
 
-  const response = await fetch(new URL(path, apiBaseUrl).toString(), {
+  const response = await authenticatedFetch(new URL(path, apiBaseUrl).toString(), {
     method,
     headers,
     ...(payload ? { body: JSON.stringify(payload) } : {}),
@@ -89,7 +90,7 @@ export async function fetchMyPlaceReviews(token: string, page = 0, size = 10) {
   const url = new URL('/api/users/me/reviews', apiBaseUrl)
   url.searchParams.set('page', String(page))
   url.searchParams.set('size', String(size))
-  const response = await fetch(url.toString(), {
+  const response = await authenticatedFetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!response.ok) {

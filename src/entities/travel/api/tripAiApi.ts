@@ -1,4 +1,5 @@
 import { apiBaseUrl } from '@/shared/lib/apiBaseUrl'
+import { authenticatedFetch } from '@/shared/lib/authenticatedFetch'
 
 export type AiSuggestionStatus = 'PENDING' | 'VOTING' | 'APPLIED' | 'REJECTED'
 export type AiAnalysisTriggerType = 'BUTTON' | 'AUTO'
@@ -49,7 +50,7 @@ function getAiErrorMessage(status: number) {
 }
 
 async function requestAi<T>(path: string, token: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(new URL(path, apiBaseUrl).toString(), {
+  const response = await authenticatedFetch(new URL(path, apiBaseUrl).toString(), {
     ...options,
     headers: {
       Authorization: `Bearer ${token}`,

@@ -1,6 +1,7 @@
 import type { Trip } from '@/entities/travel/model/travel'
 import { getTripTypeLabel } from '@/entities/travel/model/tripAccess'
 import { apiBaseUrl } from '@/shared/lib/apiBaseUrl'
+import { authenticatedFetch } from '@/shared/lib/authenticatedFetch'
 
 export type TripMemberResponse = {
   userId: number
@@ -107,7 +108,7 @@ function authHeaders(token: string, json = false) {
 }
 
 async function requestWithToken<T>(path: string, token: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(new URL(path, apiBaseUrl).toString(), {
+  const response = await authenticatedFetch(new URL(path, apiBaseUrl).toString(), {
     ...options,
     headers: {
       ...authHeaders(token, Boolean(options.body)),

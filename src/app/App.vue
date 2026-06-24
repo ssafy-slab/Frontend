@@ -137,8 +137,8 @@ function handleLogin(payload: AuthUser) {
   changeView(resolveAuthenticatedView())
 }
 
-function handleLogout() {
-  authStore.logout()
+async function handleLogout() {
+  await authStore.logout()
   showToast('로그아웃되었습니다.')
   changeView('home')
 }

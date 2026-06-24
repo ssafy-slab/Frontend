@@ -1,4 +1,5 @@
 import { apiBaseUrl } from '@/shared/lib/apiBaseUrl'
+import { authenticatedFetch } from '@/shared/lib/authenticatedFetch'
 
 export type ChatMessageResponse = {
   messageId: number
@@ -50,7 +51,7 @@ export async function fetchChatMessages(token: string, tripId: number, limit = 5
   const url = new URL(`/api/chats/trips/${tripId}/messages`, apiBaseUrl)
   url.searchParams.set('limit', String(limit))
 
-  const response = await fetch(url.toString(), {
+  const response = await authenticatedFetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   })
 

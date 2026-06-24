@@ -1,6 +1,6 @@
 {
-  "last_turn_at": "2026-06-24T11:53:21.760Z",
-  "turn_count": 22,
-  "last_progress_at": "2026-06-24T11:53:21.760Z",
-  "last_agent_output": "구현 완료했습니다.\n\n- 커뮤니티 카드·상세 찜 버튼 및 낙관적 업데이트/실패 복구\n- 비로그인 시 로그인 화면 이동\n- 프로필 `찜한 게시글` 탭, 페이지네이션, 즉시 찜 해제\n"
+  "last_turn_at": "2026-06-24T12:40:45.466Z",
+  "turn_count": 24,
+  "last_progress_at": "2026-06-24T12:40:45.466Z",
+  "last_agent_output": "수정했습니다.\n\n- 앱 시작 시 Refresh Token 쿠키로 세션 복구\n- 401 발생 시 토큰 재발급 후 요청 1회 재시도\n- 동시 refresh 요청 하나로 통합\n- 로그아"
 }

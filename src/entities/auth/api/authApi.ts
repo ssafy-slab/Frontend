@@ -1,4 +1,11 @@
 import { apiBaseUrl } from '@/shared/lib/apiBaseUrl'
+import {
+  authenticatedFetch,
+  type AuthSessionPayload,
+  logoutAuthSession,
+  normalizeAuthSession,
+  refreshAuthSession,
+} from '@/shared/lib/authenticatedFetch'
 
 export type AuthUser = {
   userId: number
@@ -38,6 +45,7 @@ export type OAuthProvider = 'kakao' | 'google'
 async function requestAuth(path: string, body: LoginPayload | SignupPayload): Promise<AuthResponse> {
   const response = await fetch(new URL(path, apiBaseUrl), {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
@@ -49,11 +57,11 @@ async function requestAuth(path: string, body: LoginPayload | SignupPayload): Pr
     throw new Error(`인증 요청에 실패했습니다. (${response.status})`)
   }
 
-  return response.json() as Promise<AuthResponse>
+  return normalizeAuthSession(await response.json() as AuthSessionPayload) as AuthResponse
 }
 
 async function requestWithToken<T>(path: string, token: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(new URL(path, apiBaseUrl), {
+  const response = await authenticatedFetch(new URL(path, apiBaseUrl), {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -79,6 +87,14 @@ export function login(payload: LoginPayload) {
 
 export function signup(payload: SignupPayload) {
   return requestAuth('/api/auth/signup', payload)
+}
+
+export function refreshSession() {
+  return refreshAuthSession() as Promise<AuthResponse>
+}
+
+export function logoutSession() {
+  return logoutAuthSession()
 }
 
 export function getOAuthAuthorizeUrl(provider: OAuthProvider) {

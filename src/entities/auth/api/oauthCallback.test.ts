@@ -20,7 +20,7 @@ describe('handleOAuthCallbackRedirect', () => {
             email: 'user@test.com',
             nickname: 'user',
             role: 'USER',
-            localAccount: false,
+            oauthUser: true,
           },
         }),
         { status: 200 },
@@ -51,6 +51,7 @@ describe('handleOAuthCallbackRedirect', () => {
       expect.stringContaining('/api/oauth/token'),
       expect.objectContaining({
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticket: 'one-time-ticket' }),
       }),
