@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { ArrowLeft, Check, ChevronDown, ImagePlus, MapPin, Search, Send, X } from 'lucide-vue-next'
+import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, ImagePlus, MapPin, Plus, Search, Send, Trash2, X } from 'lucide-vue-next'
 import {
   createCommunityPost,
   fetchCommunityPost,
@@ -10,6 +10,7 @@ import {
 } from '@/entities/community/api/communityApi'
 import { fetchPlaces } from '@/entities/place/api/placeApi'
 import type { Place } from '@/entities/travel/model/travel'
+import type { CommunityPostCellPayload } from '@/entities/community/api/communityApi'
 
 const props = defineProps<{
   accessToken: string
@@ -29,14 +30,44 @@ const categories = [
   { label: '자유게시판', value: 'FREE' },
 ]
 
+type EditorCell = {
+  id: number
+  cellType: 'TEXT' | 'IMAGE'
+  textContent: string
+  imageUrl: string
+  file: File | null
+  previewUrl: string
+}
+
+let nextCellId = 1
+
+function createTextCell(textContent = ''): EditorCell {
+  return {
+    id: nextCellId++,
+    cellType: 'TEXT',
+    textContent,
+    imageUrl: '',
+    file: null,
+    previewUrl: '',
+  }
+}
+
+function createImageCell(imageUrl = ''): EditorCell {
+  return {
+    id: nextCellId++,
+    cellType: 'IMAGE',
+    textContent: '',
+    imageUrl,
+    file: null,
+    previewUrl: '',
+  }
+}
+
 const form = reactive({
   category: 'PLACE_REVIEW',
   title: '',
-  content: '',
 })
-const selectedImage = ref<File | null>(null)
-const imagePreviewUrl = ref('')
-const existingImageUrl = ref('')
+const cells = ref<EditorCell[]>([createTextCell()])
 const placeQuery = ref('')
 const selectedPlace = ref<Place | null>(null)
 const placeResults = ref<Place[]>([])
@@ -46,8 +77,11 @@ const submitting = ref(false)
 const errorMessage = ref('')
 
 const isEditMode = computed(() => Boolean(props.editPostId))
-const canSubmit = computed(() => form.title.trim().length > 0 && !submitting.value && !loadingPost.value)
-const visibleImageUrl = computed(() => imagePreviewUrl.value || existingImageUrl.value)
+const hasValidCell = computed(() => cells.value.some((cell) => (
+  cell.cellType === 'TEXT' ? Boolean(cell.textContent.trim()) : Boolean(cell.file || cell.imageUrl)
+)))
+const canAddCell = computed(() => cells.value.length < 5)
+const canSubmit = computed(() => form.title.trim().length > 0 && hasValidCell.value && !submitting.value && !loadingPost.value)
 
 let placeRequestId = 0
 let placeSearchTimer: number | undefined
@@ -60,8 +94,17 @@ async function loadEditPost() {
     const post = await fetchCommunityPost(props.editPostId, props.accessToken)
     form.category = post.category
     form.title = post.title
-    form.content = post.content ?? ''
-    existingImageUrl.value = resolveCommunityImageUrl(post.imageUrl)
+    cells.value = post.cells?.length
+      ? [...post.cells]
+        .sort((left, right) => left.sortOrder - right.sortOrder)
+        .map((cell) => cell.cellType === 'IMAGE'
+          ? createImageCell(cell.imageUrl ?? '')
+          : createTextCell(cell.textContent ?? ''))
+      : [
+        ...(post.imageUrl ? [createImageCell(post.imageUrl)] : []),
+        ...(post.content ? [createTextCell(post.content)] : []),
+      ]
+    if (!cells.value.length) cells.value = [createTextCell()]
     if (post.placeId && post.placeName) {
       selectedPlace.value = {
         id: post.placeId,
@@ -85,7 +128,7 @@ async function loadEditPost() {
   }
 }
 
-function onImageSelected(event: Event) {
+function onCellImageSelected(index: number, event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
@@ -97,20 +140,56 @@ function onImageSelected(event: Event) {
     errorMessage.value = '이미지는 5MB 이하만 업로드할 수 있습니다.'
     return
   }
-  clearImagePreview()
-  selectedImage.value = file
-  imagePreviewUrl.value = URL.createObjectURL(file)
+  const cell = cells.value[index]
+  if (!cell) return
+  clearCellImagePreview(cell)
+  cell.file = file
+  cell.imageUrl = ''
+  cell.previewUrl = URL.createObjectURL(file)
 }
 
-function clearImagePreview() {
-  if (imagePreviewUrl.value) URL.revokeObjectURL(imagePreviewUrl.value)
-  selectedImage.value = null
-  imagePreviewUrl.value = ''
+function clearCellImagePreview(cell: EditorCell | undefined) {
+  if (!cell) return
+  if (cell.previewUrl) URL.revokeObjectURL(cell.previewUrl)
+  cell.previewUrl = ''
+  cell.file = null
 }
 
-function clearImage() {
-  clearImagePreview()
-  existingImageUrl.value = ''
+function clearCellImage(index: number) {
+  const cell = cells.value[index]
+  if (!cell) return
+  clearCellImagePreview(cell)
+  cell.imageUrl = ''
+}
+
+function addTextCell() {
+  if (!canAddCell.value) return
+  cells.value.push(createTextCell())
+}
+
+function addImageCell() {
+  if (!canAddCell.value) return
+  cells.value.push(createImageCell())
+}
+
+function removeCell(index: number) {
+  if (cells.value.length <= 1) return
+  clearCellImagePreview(cells.value[index])
+  cells.value.splice(index, 1)
+}
+
+function moveCell(index: number, direction: -1 | 1) {
+  const targetIndex = index + direction
+  if (targetIndex < 0 || targetIndex >= cells.value.length) return
+  const nextCells = [...cells.value]
+  const [cell] = nextCells.splice(index, 1)
+  if (!cell) return
+  nextCells.splice(targetIndex, 0, cell)
+  cells.value = nextCells
+}
+
+function visibleCellImageUrl(cell: EditorCell) {
+  return cell.previewUrl || resolveCommunityImageUrl(cell.imageUrl)
 }
 
 async function searchPlaces() {
@@ -156,20 +235,36 @@ async function submitPost() {
     errorMessage.value = '제목을 입력해주세요.'
     return
   }
+  if (!hasValidCell.value) {
+    errorMessage.value = '글 또는 사진 셀을 하나 이상 입력해주세요.'
+    return
+  }
   submitting.value = true
   errorMessage.value = ''
   try {
-    let imageUrl = existingImageUrl.value || undefined
-    if (selectedImage.value) {
-      imageUrl = (await uploadCommunityImage(props.accessToken, selectedImage.value)).imageUrl
+    const payloadCells: CommunityPostCellPayload[] = []
+    for (const cell of cells.value) {
+      if (cell.cellType === 'TEXT') {
+        const textContent = cell.textContent.trim()
+        if (textContent) payloadCells.push({ cellType: 'TEXT', textContent, imageUrl: null })
+        continue
+      }
+      let imageUrl = cell.imageUrl
+      if (cell.file) {
+        imageUrl = (await uploadCommunityImage(props.accessToken, cell.file)).imageUrl
+      }
+      if (imageUrl) payloadCells.push({ cellType: 'IMAGE', textContent: null, imageUrl })
     }
+    const content = payloadCells.find((cell) => cell.cellType === 'TEXT')?.textContent ?? undefined
+    const imageUrl = payloadCells.find((cell) => cell.cellType === 'IMAGE')?.imageUrl ?? undefined
 
     const payload = {
       category: form.category,
       title: form.title.trim(),
-      content: form.content.trim() || undefined,
+      content,
       imageUrl,
       placeId: selectedPlace.value?.id ?? null,
+      cells: payloadCells,
     }
     const saved = props.editPostId
       ? await updateCommunityPost(props.editPostId, props.accessToken, payload)
@@ -191,7 +286,7 @@ watch(placeQuery, () => {
 onMounted(loadEditPost)
 onBeforeUnmount(() => {
   if (placeSearchTimer) window.clearTimeout(placeSearchTimer)
-  clearImagePreview()
+  cells.value.forEach(clearCellImagePreview)
 })
 </script>
 
@@ -225,43 +320,77 @@ onBeforeUnmount(() => {
 
         <label class="block">
           <span class="mb-2 block text-sm font-black text-slate-950">제목</span>
-          <input v-model="form.title" class="brand-input h-11 w-full rounded-lg px-3 text-sm outline-none" placeholder="예: 제주 비자림 오전 방문 후기" />
-        </label>
-
-        <label class="block">
-          <span class="mb-2 block text-sm font-black text-slate-950">내용</span>
-          <textarea v-model="form.content" class="brand-input min-h-52 w-full resize-none rounded-lg px-3 py-3 text-sm leading-6 outline-none" placeholder="공유하고 싶은 여행 이야기를 적어주세요." />
+          <input v-model="form.title" data-testid="community-title-input" class="brand-input h-11 w-full rounded-lg px-3 text-sm outline-none" placeholder="예: 제주 비자림 오전 방문 후기" />
         </label>
 
         <section>
-          <span class="mb-2 block text-sm font-black text-slate-950">대표 이미지</span>
-          <label
-            v-if="!visibleImageUrl"
-            class="flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 text-center transition hover:border-brand-500 hover:bg-brand-50"
-          >
-            <ImagePlus :size="28" class="text-brand-500" />
-            <span class="mt-3 text-sm font-black text-slate-800">컴퓨터에서 사진 선택</span>
-            <span class="mt-1 text-xs font-bold text-slate-500">JPG, PNG, WebP, GIF · 최대 5MB</span>
-            <input type="file" accept="image/*" class="hidden" @change="onImageSelected" />
-          </label>
-          <div v-else class="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <div class="relative aspect-[16/9] bg-slate-100">
-              <img :src="visibleImageUrl" alt="대표 이미지 미리보기" class="absolute inset-0 size-full object-cover" />
-              <button
-                class="absolute right-3 top-3 grid size-9 place-items-center rounded-full bg-white/95 text-slate-700 shadow-lg"
-                type="button"
-                aria-label="이미지 제거"
-                @click="clearImage"
-              >
-                <X :size="18" />
+          <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <span class="block text-sm font-black text-slate-950">본문 셀</span>
+            <div class="flex gap-2">
+              <button type="button" data-testid="add-text-cell" class="inline-flex h-9 items-center gap-1 rounded-lg bg-slate-100 px-3 text-xs font-black text-slate-700 disabled:opacity-50" :disabled="!canAddCell" @click="addTextCell">
+                <Plus :size="14" />
+                글
+              </button>
+              <button type="button" data-testid="add-image-cell" class="inline-flex h-9 items-center gap-1 rounded-lg bg-slate-100 px-3 text-xs font-black text-slate-700 disabled:opacity-50" :disabled="!canAddCell" @click="addImageCell">
+                <ImagePlus :size="14" />
+                사진
               </button>
             </div>
-            <div class="flex items-center justify-between gap-3 px-4 py-3">
-              <p class="truncate text-xs font-bold text-slate-500">{{ selectedImage?.name || '기존 대표 이미지' }}</p>
-              <label class="cursor-pointer text-xs font-black text-brand-500 hover:text-brand-600">
-                다른 사진 선택
-                <input type="file" accept="image/*" class="hidden" @change="onImageSelected" />
-              </label>
+          </div>
+
+          <div class="grid gap-3">
+            <div v-for="(cell, index) in cells" :key="cell.id" class="rounded-xl border border-slate-200 bg-white p-3">
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <span class="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-600">
+                  {{ cell.cellType === 'TEXT' ? '글' : '사진' }} {{ index + 1 }}
+                </span>
+                <div class="flex gap-1">
+                  <button type="button" class="grid size-8 place-items-center rounded-lg bg-slate-50 text-slate-500 disabled:opacity-30" :disabled="index === 0" @click="moveCell(index, -1)">
+                    <ArrowUp :size="14" />
+                  </button>
+                  <button type="button" class="grid size-8 place-items-center rounded-lg bg-slate-50 text-slate-500 disabled:opacity-30" :disabled="index === cells.length - 1" @click="moveCell(index, 1)">
+                    <ArrowDown :size="14" />
+                  </button>
+                  <button type="button" class="grid size-8 place-items-center rounded-lg bg-red-50 text-red-500 disabled:opacity-30" :disabled="cells.length === 1" @click="removeCell(index)">
+                    <Trash2 :size="14" />
+                  </button>
+                </div>
+              </div>
+
+              <textarea
+                v-if="cell.cellType === 'TEXT'"
+                v-model="cell.textContent"
+                :data-testid="`community-cell-text-${index}`"
+                class="brand-input min-h-36 w-full resize-none rounded-lg px-3 py-3 text-sm leading-6 outline-none"
+                placeholder="공유하고 싶은 여행 이야기를 적어주세요."
+              />
+
+              <div v-else>
+                <label
+                  v-if="!visibleCellImageUrl(cell)"
+                  class="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 px-4 text-center transition hover:border-brand-500 hover:bg-brand-50"
+                >
+                  <ImagePlus :size="24" class="text-brand-500" />
+                  <span class="mt-2 text-sm font-black text-slate-800">사진 선택</span>
+                  <span class="mt-1 text-xs font-bold text-slate-500">JPG, PNG, WebP, GIF · 최대 5MB</span>
+                  <input :data-testid="`community-cell-image-${index}`" type="file" accept="image/*" class="hidden" @change="onCellImageSelected(index, $event)" />
+                </label>
+                <div v-else class="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                  <div class="relative flex min-h-44 max-h-80 items-center justify-center bg-slate-100">
+                    <img :src="visibleCellImageUrl(cell)" alt="셀 이미지 미리보기" class="max-h-80 w-full object-contain" />
+                    <button class="absolute right-3 top-3 grid size-8 place-items-center rounded-full bg-white/95 text-slate-700 shadow-lg" type="button" aria-label="이미지 제거" @click="clearCellImage(index)">
+                      <X :size="16" />
+                    </button>
+                  </div>
+                  <div class="flex items-center justify-between gap-3 px-3 py-2">
+                    <p class="truncate text-xs font-bold text-slate-500">{{ cell.file?.name || '기존 이미지' }}</p>
+                    <label class="cursor-pointer text-xs font-black text-brand-500 hover:text-brand-600">
+                      다른 사진 선택
+                      <input :data-testid="`community-cell-image-${index}`" type="file" accept="image/*" class="hidden" @change="onCellImageSelected(index, $event)" />
+                    </label>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -301,7 +430,7 @@ onBeforeUnmount(() => {
         <button class="h-10 rounded-lg bg-slate-100 px-4 text-sm font-black text-slate-700" @click="emit('change', 'community')">
           취소
         </button>
-        <button class="btn-primary inline-flex h-10 items-center gap-2 rounded-lg px-5 text-sm disabled:cursor-not-allowed disabled:opacity-60" :disabled="!canSubmit" @click="submitPost">
+        <button data-testid="submit-community-post" class="btn-primary inline-flex h-10 items-center gap-2 rounded-lg px-5 text-sm disabled:cursor-not-allowed disabled:opacity-60" :disabled="!canSubmit" @click="submitPost">
           <Send :size="16" />
           {{ submitting ? '저장 중' : (isEditMode ? '수정하기' : '등록하기') }}
         </button>

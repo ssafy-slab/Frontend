@@ -18,6 +18,22 @@ export const mockCommunityPosts: CommunityPostDetail[] = [
     updatedAt: '2026-06-22T11:00:00',
     likedByMe: false,
     mine: false,
+    cells: [
+      {
+        postCellId: null,
+        sortOrder: 1,
+        cellType: 'IMAGE',
+        textContent: null,
+        imageUrl: 'https://images.unsplash.com/photo-1499092346589-b9b6be3e94b2?auto=format&fit=crop&w=1200&q=80',
+      },
+      {
+        postCellId: null,
+        sortOrder: 2,
+        cellType: 'TEXT',
+        textContent: '많이 걷지 않아도 풍경을 즐길 수 있는 가족 여행 코스입니다.',
+        imageUrl: null,
+      },
+    ],
   },
   {
     postId: -102,
@@ -36,6 +52,22 @@ export const mockCommunityPosts: CommunityPostDetail[] = [
     updatedAt: '2026-06-21T16:30:00',
     likedByMe: false,
     mine: false,
+    cells: [
+      {
+        postCellId: null,
+        sortOrder: 1,
+        cellType: 'IMAGE',
+        textContent: null,
+        imageUrl: 'https://images.unsplash.com/photo-1506816561089-5cc37b3aa9b0?auto=format&fit=crop&w=1200&q=80',
+      },
+      {
+        postCellId: null,
+        sortOrder: 2,
+        cellType: 'TEXT',
+        textContent: '주말 오전에 가면 사람이 적고 골목 사진이 잘 나옵니다.',
+        imageUrl: null,
+      },
+    ],
   },
 ]
 

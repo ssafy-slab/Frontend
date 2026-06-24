@@ -51,6 +51,14 @@ const errorMessage = ref('')
 
 const categoryLabel = computed(() => post.value ? categoryLabels[post.value.category] ?? post.value.category : '')
 const postImageUrl = computed(() => post.value?.imageUrl ? resolveCommunityImageUrl(post.value.imageUrl) : '')
+const postContentCells = computed(() => {
+  if (!post.value) return []
+  if (post.value.cells?.length) return [...post.value.cells].sort((left, right) => left.sortOrder - right.sortOrder)
+  return [
+    ...(postImageUrl.value ? [{ postCellId: null, sortOrder: 1, cellType: 'IMAGE' as const, textContent: null, imageUrl: post.value.imageUrl }] : []),
+    ...(post.value.content ? [{ postCellId: null, sortOrder: 2, cellType: 'TEXT' as const, textContent: post.value.content, imageUrl: null }] : []),
+  ]
+})
 const displayComments = computed(() => flattenCommunityComments(comments.value))
 
 function syncCommentCount() {
@@ -276,8 +284,21 @@ onMounted(loadPost)
       </div>
 
       <div class="mt-6 space-y-6 text-base font-semibold leading-8 text-slate-700">
-        <img v-if="postImageUrl" :src="postImageUrl" :alt="post.title" class="h-72 w-full rounded-xl object-cover sm:h-[420px]" />
-        <p class="whitespace-pre-line break-words [overflow-wrap:anywhere]">{{ post.content || '본문이 없습니다.' }}</p>
+        <template v-if="postContentCells.length">
+          <div v-for="cell in postContentCells" :key="`${cell.sortOrder}-${cell.postCellId ?? cell.cellType}`" data-testid="post-content-cell">
+            <div v-if="cell.cellType === 'IMAGE' && cell.imageUrl" class="flex min-h-40 items-center justify-center overflow-hidden rounded-xl bg-slate-100">
+              <img
+                :src="resolveCommunityImageUrl(cell.imageUrl)"
+                :alt="post.title"
+                class="max-h-[520px] max-w-full object-contain"
+              />
+            </div>
+            <p v-else-if="cell.cellType === 'TEXT'" class="whitespace-pre-line break-words [overflow-wrap:anywhere]">
+              {{ cell.textContent }}
+            </p>
+          </div>
+        </template>
+        <p v-else class="whitespace-pre-line break-words [overflow-wrap:anywhere]">본문이 없습니다.</p>
 
         <div v-if="post.placeName" class="flex gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <div class="grid size-10 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-500">

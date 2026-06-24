@@ -19,8 +19,23 @@ export type CommunityPostSummary = {
   mine: boolean
 }
 
+export type CommunityPostCell = {
+  postCellId: number | null
+  sortOrder: number
+  cellType: 'TEXT' | 'IMAGE'
+  textContent: string | null
+  imageUrl: string | null
+}
+
 export type CommunityPostDetail = Omit<CommunityPostSummary, 'excerpt'> & {
   content: string | null
+  cells?: CommunityPostCell[]
+}
+
+export type CommunityPostCellPayload = {
+  cellType: 'TEXT' | 'IMAGE'
+  textContent?: string | null
+  imageUrl?: string | null
 }
 
 export type CommunityPostPayload = {
@@ -29,6 +44,7 @@ export type CommunityPostPayload = {
   content?: string
   imageUrl?: string
   placeId?: number | null
+  cells?: CommunityPostCellPayload[]
 }
 
 export type CommunityImageResponse = {

@@ -856,6 +856,33 @@ describe('ScheduleDetailPage collaboration controls', () => {
     expect(wrapper.text()).toContain('18:00 저녁')
   })
 
+  it('blocks creating a schedule item when the end time is before the start time', async () => {
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-schedule-form"]').trigger('click')
+    await wrapper.get('[data-testid="schedule-title-input"]').setValue('Late dinner')
+    await wrapper.get('[data-testid="schedule-date-input"]').setValue('2026-07-01')
+    await wrapper.get('[data-testid="schedule-start-input"]').setValue('20:00')
+    await wrapper.get('[data-testid="schedule-end-input"]').setValue('19:00')
+
+    expect(wrapper.get('[data-testid="save-schedule-button"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="save-schedule-button"]').trigger('click')
+    await flushPromises()
+
+    expect(createTripSchedule).not.toHaveBeenCalled()
+  })
+
   it('creates a place schedule item when a place is selected in the place tab', async () => {
     const wrapper = mount(ScheduleDetailPage, {
       props: {
@@ -984,6 +1011,31 @@ describe('ScheduleDetailPage collaboration controls', () => {
       memo: '카페 근처',
     }))
     expect(wrapper.text()).toContain('17:00 수정된 자유시간')
+  })
+
+  it('blocks updating a schedule item when the end time is before the start time', async () => {
+    const wrapper = mount(ScheduleDetailPage, {
+      props: {
+        trip: createTrip('TEAM'),
+        accessToken: 'token',
+      },
+      global: {
+        stubs: {
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="edit-schedule-99"]').trigger('click')
+    await wrapper.get('[data-testid="schedule-start-input"]').setValue('18:00')
+    await wrapper.get('[data-testid="schedule-end-input"]').setValue('17:00')
+
+    expect(wrapper.get('[data-testid="save-schedule-button"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="save-schedule-button"]').trigger('click')
+    await flushPromises()
+
+    expect(updateTripSchedule).not.toHaveBeenCalled()
   })
 
   it('asks before replacing an existing schedule when a new item has the same start time', async () => {

@@ -109,6 +109,17 @@ const scheduleDraft = reactive({
 let placeSearchRequestId = 0
 
 const doneCount = computed(() => checklist.value.filter((item) => item.done).length)
+const isScheduleTimeRangeInvalid = computed(() => (
+  Boolean(scheduleDraft.startTime && scheduleDraft.endTime)
+  && timeToMinutes(scheduleDraft.endTime) < timeToMinutes(scheduleDraft.startTime)
+))
+const canSaveSchedule = computed(() => (
+  !isSaving.value
+  && Boolean(scheduleDraft.title.trim())
+  && Boolean(scheduleDraft.date)
+  && Boolean(scheduleDraft.startTime)
+  && !isScheduleTimeRangeInvalid.value
+))
 const scheduleGroups = computed(() => {
   const groups = new Map<string, ScheduleItem[]>()
   sortScheduleItems(scheduleItems.value).forEach((item) => {
@@ -200,7 +211,7 @@ function getDefaultEndTime(startTime: string) {
 
 function ensureValidEndTime() {
   if (!scheduleDraft.startTime) return
-  if (!scheduleDraft.endTime || timeToMinutes(scheduleDraft.endTime) <= timeToMinutes(scheduleDraft.startTime)) {
+  if (!scheduleDraft.endTime) {
     scheduleDraft.endTime = getDefaultEndTime(scheduleDraft.startTime)
   }
 }
@@ -378,6 +389,7 @@ function buildSchedulePayload(replaceTarget?: ScheduleItem | null): TripSchedule
 
 async function saveScheduleItem(forceReplace = false) {
   if (!scheduleDraft.title.trim() || !scheduleDraft.date || !scheduleDraft.startTime) return
+  if (isScheduleTimeRangeInvalid.value) return
   if (!props.accessToken || !props.trip?.id) {
     emit('saved', '로그인이 필요합니다.')
     return
@@ -1251,6 +1263,9 @@ onBeforeUnmount(closeChatSocket)
                 <input v-model="scheduleDraft.endTime" data-testid="schedule-end-input" type="time" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" />
               </label>
             </div>
+            <p v-if="isScheduleTimeRangeInvalid" class="text-xs font-bold text-red-500">
+              종료 시간은 시작 시간보다 앞설 수 없습니다.
+            </p>
             <label class="block">
               <span class="mb-1.5 block text-xs font-black text-slate-950">메모</span>
               <input v-model="scheduleDraft.memo" data-testid="schedule-memo-input" class="brand-input h-10 w-full rounded-lg px-3 text-sm outline-none" placeholder="숙소 근처" />
@@ -1259,7 +1274,7 @@ onBeforeUnmount(closeChatSocket)
           <button
             data-testid="save-schedule-button"
             class="btn-primary mt-5 h-10 w-full rounded-lg text-sm disabled:cursor-not-allowed disabled:opacity-60"
-            :disabled="isSaving || !scheduleDraft.title.trim() || !scheduleDraft.date || !scheduleDraft.startTime"
+            :disabled="!canSaveSchedule"
             @click="saveScheduleItem()"
           >
             {{ isSaving ? '저장 중' : '저장하기' }}

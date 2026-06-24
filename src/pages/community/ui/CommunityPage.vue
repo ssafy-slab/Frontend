@@ -220,7 +220,9 @@ onBeforeUnmount(() => {
         class="brand-card cursor-pointer overflow-hidden rounded-xl transition hover:-translate-y-0.5 hover:border-brand-500"
         @click="emit('openPost', post.postId)"
       >
-        <img :src="postImageUrl(post.imageUrl)" :alt="post.title" class="h-48 w-full object-cover sm:h-52" />
+        <div class="flex h-48 w-full items-center justify-center bg-slate-100 sm:h-52">
+          <img :src="postImageUrl(post.imageUrl)" :alt="post.title" class="max-h-full w-full object-contain" />
+        </div>
         <div class="p-4">
           <p class="text-xs font-black text-brand-500">{{ categoryLabel(post.category) }}</p>
           <h2 class="mt-2 line-clamp-2 text-base font-black leading-snug text-slate-950">{{ post.title }}</h2>

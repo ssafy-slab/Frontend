@@ -68,6 +68,7 @@ describe('CommunityDetailPage comments', () => {
       updatedAt: '2026-06-24T09:00:00',
       likedByMe: false,
       mine: false,
+      cells: [],
     })
     fetchCommunityComments.mockResolvedValue([
       comment(),
@@ -106,6 +107,75 @@ describe('CommunityDetailPage comments', () => {
     expect(wrapper.find('[data-testid="delete-comment-1"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="edit-comment-2"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="delete-comment-2"]').exists()).toBe(false)
+  })
+
+  it('renders post cells in their saved order', async () => {
+    fetchCommunityPost.mockResolvedValueOnce({
+      postId: 3,
+      userId: 9,
+      authorNickname: 'writer',
+      placeId: null,
+      placeName: null,
+      category: 'FREE',
+      title: 'post',
+      content: 'legacy body',
+      imageUrl: 'https://example.com/legacy.jpg',
+      likeCount: 0,
+      commentCount: 0,
+      viewCount: 1,
+      createdAt: '2026-06-24T09:00:00',
+      updatedAt: '2026-06-24T09:00:00',
+      likedByMe: false,
+      mine: false,
+      cells: [
+        { postCellId: 1, sortOrder: 1, cellType: 'TEXT', textContent: 'First story', imageUrl: null },
+        { postCellId: 2, sortOrder: 2, cellType: 'IMAGE', textContent: null, imageUrl: 'https://example.com/a.jpg' },
+        { postCellId: 3, sortOrder: 3, cellType: 'TEXT', textContent: 'Second story', imageUrl: null },
+      ],
+    })
+    const wrapper = mount(CommunityDetailPage, {
+      props: { postId: 3, accessToken: 'token' },
+      global: { stubs: { Transition: false } },
+    })
+    await flushPromises()
+
+    const cells = wrapper.findAll('[data-testid="post-content-cell"]')
+    expect(cells).toHaveLength(3)
+    expect(cells[0]?.text()).toContain('First story')
+    expect(cells[1]?.find('img').attributes('src')).toBe('https://example.com/a.jpg')
+    expect(cells[2]?.text()).toContain('Second story')
+  })
+
+  it('renders the legacy post image without cropping when cells are missing', async () => {
+    fetchCommunityPost.mockResolvedValueOnce({
+      postId: 3,
+      userId: 9,
+      authorNickname: 'writer',
+      placeId: null,
+      placeName: null,
+      category: 'FREE',
+      title: 'post',
+      content: 'legacy body',
+      imageUrl: 'https://example.com/legacy.jpg',
+      likeCount: 0,
+      commentCount: 0,
+      viewCount: 1,
+      createdAt: '2026-06-24T09:00:00',
+      updatedAt: '2026-06-24T09:00:00',
+      likedByMe: false,
+      mine: false,
+      cells: [],
+    })
+    const wrapper = mount(CommunityDetailPage, {
+      props: { postId: 3, accessToken: 'token' },
+      global: { stubs: { Transition: false } },
+    })
+    await flushPromises()
+
+    const image = wrapper.get('[data-testid="post-content-cell"] img')
+    expect(image.attributes('src')).toBe('https://example.com/legacy.jpg')
+    expect(image.classes()).toContain('object-contain')
+    expect(image.classes()).not.toContain('object-cover')
   })
 
   it('creates a reply to the selected comment and uses one common indentation level', async () => {
