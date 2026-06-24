@@ -218,7 +218,7 @@ watch(activeView, (view) => {
 
   <AppFooter v-if="activeView !== 'explore'" />
 
-  <MobileNav :active-view="activeView" @change="changeView" />
+  <MobileNav v-if="activeView !== 'explore'" :active-view="activeView" @change="changeView" />
 
   <Transition name="toast-pop">
     <div v-if="toastMessage" class="fixed bottom-24 left-1/2 z-[90] -translate-x-1/2 rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl md:bottom-6">

@@ -38,6 +38,7 @@ const selectedCategory = ref('')
 const selectedSort = ref<CommunitySort>('latest')
 const query = ref('')
 const posts = ref<CommunityPostSummary[]>([])
+const currentPage = ref(1)
 const loading = ref(false)
 const errorMessage = ref('')
 const bookmarkingPostIds = ref<number[]>([])
@@ -46,6 +47,12 @@ const sortMenuRef = ref<HTMLElement | null>(null)
 const fallbackImage = '/images/default-place.svg'
 
 const selectedSortLabel = computed(() => sortOptions.find((option) => option.value === selectedSort.value)?.label ?? '최신순')
+const POSTS_PER_PAGE = 9
+const pageCount = computed(() => Math.max(1, Math.ceil(posts.value.length / POSTS_PER_PAGE)))
+const pagedPosts = computed(() => {
+  const start = (currentPage.value - 1) * POSTS_PER_PAGE
+  return posts.value.slice(start, start + POSTS_PER_PAGE)
+})
 
 let requestId = 0
 
@@ -84,11 +91,13 @@ async function loadPosts() {
     }, props.accessToken)
     if (currentRequestId === requestId) {
       posts.value = sortCommunityPosts([...result, ...getVisibleMockPosts()])
+      currentPage.value = 1
     }
   } catch (error) {
     if (currentRequestId === requestId) {
       const fallbackPosts = getVisibleMockPosts()
       posts.value = fallbackPosts
+      currentPage.value = 1
       errorMessage.value = fallbackPosts.length ? '' : error instanceof Error ? error.message : '게시글을 불러오지 못했습니다.'
     }
   } finally {
@@ -152,6 +161,9 @@ async function toggleBookmark(post: CommunityPostSummary) {
 watch([selectedCategory, selectedSort], loadPosts)
 watch(query, () => {
   window.setTimeout(() => loadPosts(), 250)
+})
+watch(pageCount, (nextPageCount) => {
+  if (currentPage.value > nextPageCount) currentPage.value = nextPageCount
 })
 onMounted(() => {
   document.addEventListener('mousedown', closeSortMenu)
@@ -241,14 +253,15 @@ onBeforeUnmount(() => {
     <p v-else-if="errorMessage" class="rounded-xl bg-red-50 p-8 text-center text-sm font-bold text-red-600">
       {{ errorMessage }}
     </p>
-    <div v-else-if="posts.length" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      <article
-        v-for="post in posts"
-        :key="post.postId"
-        data-testid="community-card"
-        class="brand-card flex min-h-[330px] cursor-pointer flex-col overflow-hidden rounded-xl transition hover:-translate-y-0.5 hover:border-brand-500"
-        @click="emit('openPost', post.postId)"
-      >
+    <template v-else-if="posts.length">
+      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <article
+          v-for="post in pagedPosts"
+          :key="post.postId"
+          data-testid="community-card"
+          class="brand-card flex min-h-[330px] cursor-pointer flex-col overflow-hidden rounded-xl transition hover:-translate-y-0.5 hover:border-brand-500"
+          @click="emit('openPost', post.postId)"
+        >
         <div data-testid="community-card-image" class="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-slate-100">
           <img :src="postImageUrl(post.imageUrl)" :alt="post.title" class="h-full w-full object-cover" />
           <button
@@ -284,9 +297,34 @@ onBeforeUnmount(() => {
             </span>
           </div>
         </div>
-      </article>
-    </div>
-    <p v-else class="rounded-xl bg-white p-8 text-center text-sm font-bold text-slate-500">
+        </article>
+      </div>
+      <div
+        v-if="posts.length > POSTS_PER_PAGE"
+        class="mt-6 flex items-center justify-center gap-3 border-t border-slate-200 pt-4"
+      >
+        <button
+          data-testid="community-page-previous"
+          class="inline-flex h-9 items-center rounded-lg border border-slate-200 px-3 text-sm font-black text-slate-600 transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-600 disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="currentPage === 1"
+          @click="currentPage -= 1"
+        >
+          이전
+        </button>
+        <span data-testid="community-page-indicator" class="min-w-16 text-center text-sm font-black text-slate-500">
+          {{ currentPage }} / {{ pageCount }}
+        </span>
+        <button
+          data-testid="community-page-next"
+          class="inline-flex h-9 items-center rounded-lg border border-slate-200 px-3 text-sm font-black text-slate-600 transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-600 disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="currentPage === pageCount"
+          @click="currentPage += 1"
+        >
+          다음
+        </button>
+      </div>
+    </template>
+    <p v-else data-testid="community-empty" class="rounded-xl bg-white p-8 text-center text-sm font-bold text-slate-500">
       조건에 맞는 게시글이 없습니다.
     </p>
   </section>

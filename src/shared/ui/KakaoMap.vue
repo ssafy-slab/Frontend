@@ -156,6 +156,31 @@ function markerIcon(category = '') {
 }
 
 function markerImage(marker: MapMarker, selected: boolean) {
+  if (!selected && props.selectedMarkerId !== null) {
+    const width = 32
+    const height = 32
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 32 32">
+        <defs>
+          <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%">
+            <feDropShadow dx="0" dy="2" stdDeviation="1.6" flood-color="#0f172a" flood-opacity=".24"/>
+          </filter>
+        </defs>
+        <g filter="url(#shadow)">
+          <circle cx="16" cy="16" r="13" fill="#6366f1" stroke="#fff" stroke-width="4"/>
+          <g transform="translate(8 8) scale(.68)" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+            ${markerIcon(marker.category)}
+          </g>
+        </g>
+      </svg>`
+    const src = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`
+    return new window.kakao!.maps.MarkerImage(
+      src,
+      new window.kakao!.maps.Size(width, height),
+      { offset: new window.kakao!.maps.Point(width / 2, height / 2) },
+    )
+  }
+
   const width = selected ? 54 : 48
   const height = selected ? 62 : 56
   const scale = selected ? 1.125 : 1

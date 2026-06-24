@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ExplorePage from './ExplorePage.vue'
 
 function waitForFilterReload() {
@@ -61,6 +61,10 @@ describe('ExplorePage review sorting', () => {
     })
   })
 
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('toggles a selected sort and returns to the normal order', async () => {
     const wrapper = mount(ExplorePage, {
       props: {
@@ -105,33 +109,70 @@ describe('ExplorePage review sorting', () => {
     )
   })
 
+  it('uses a close default map zoom on desktop too', async () => {
+    vi.stubGlobal('innerWidth', 1280)
+    const wrapper = mount(ExplorePage, {
+      props: {
+        accessToken: '',
+        trips: [],
+      },
+      global: { stubs: { KakaoMap: true, SafeImage: true, Teleport: true } },
+    })
+    await flushPromises()
+
+    expect(wrapper.getComponent({ name: 'KakaoMap' }).props('level')).toBe(4)
+  })
+
   it('opens place details over the map and keeps the all-pins action available', async () => {
+    vi.stubGlobal('innerWidth', 390)
     fetchPlaceFilters.mockResolvedValue({
       categories: [{ value: 'FOOD', label: '음식점', placeCount: 1 }],
       regions: [],
     })
     fetchPlaces.mockResolvedValue({
-      content: [{
-        id: 1,
-        title: '성심당',
-        location: '대전광역시 중구',
-        category: '음식점',
-        rawCategory: '음식점',
-        description: '대전의 대표 빵집',
-        image: '/images/default-place.svg',
-        thumbnailImage: '/images/default-place.svg',
-        detailImage: '/images/default-place.svg',
-        rating: 4.8,
-        reviewCount: '120',
-        tags: ['빵집'],
-        marker: { top: '50%', left: '50%' },
-        coordinates: { lat: 36.32, lng: 127.42 },
-        address: '대전광역시 중구',
-        regionId: 1,
-        regionName: '중구',
-        regionFullName: '대전광역시 중구',
-      }],
-      totalElements: 1,
+      content: [
+        {
+          id: 1,
+          title: '성심당',
+          location: '대전광역시 중구',
+          category: '음식점',
+          rawCategory: '음식점',
+          description: '대전의 대표 빵집',
+          image: '/images/default-place.svg',
+          thumbnailImage: '/images/default-place.svg',
+          detailImage: '/images/default-place.svg',
+          rating: 4.8,
+          reviewCount: '120',
+          tags: ['빵집'],
+          marker: { top: '50%', left: '50%' },
+          coordinates: { lat: 36.32, lng: 127.42 },
+          address: '대전광역시 중구',
+          regionId: 1,
+          regionName: '중구',
+          regionFullName: '대전광역시 중구',
+        },
+        {
+          id: 2,
+          title: '중앙시장',
+          location: '대전광역시 동구',
+          category: '쇼핑',
+          rawCategory: '쇼핑',
+          description: '시장',
+          image: '/images/default-place.svg',
+          thumbnailImage: '/images/default-place.svg',
+          detailImage: '/images/default-place.svg',
+          rating: 4.2,
+          reviewCount: '30',
+          tags: [],
+          marker: { top: '52%', left: '52%' },
+          coordinates: { lat: 36.321, lng: 127.421 },
+          address: '대전광역시 동구',
+          regionId: 2,
+          regionName: '동구',
+          regionFullName: '대전광역시 동구',
+        },
+      ],
+      totalElements: 2,
       page: 0,
       size: 20,
       hasNext: false,
@@ -144,13 +185,35 @@ describe('ExplorePage review sorting', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="map-category-filters"]').isVisible()).toBe(true)
+    expect(wrapper.getComponent({ name: 'KakaoMap' }).props('level')).toBe(4)
+    expect(wrapper.get('section.bg-slate-50').classes()).toContain('h-[calc(100dvh-56px)]')
     await wrapper.get('[data-testid="place-list-item-1"]').trigger('click')
 
     expect(wrapper.get('[data-testid="place-detail-overlay"]').text()).toContain('성심당')
+    const selectedMap = wrapper.getComponent({ name: 'KakaoMap' })
+    expect(selectedMap.props('level')).toBe(3)
+    expect(selectedMap.props('markers')).toHaveLength(2)
+    expect(selectedMap.props('markers')[0]).toEqual(expect.objectContaining({
+      position: { lat: 36.32, lng: 127.42 },
+    }))
+    expect(selectedMap.props('center')).toEqual(expect.objectContaining({ lng: 127.42 }))
+    expect(selectedMap.props('center').lat).toBeLessThan(36.32)
+    expect(wrapper.get('[data-testid="explore-list-sheet"]').classes()).toContain('h-dvh')
+    expect(wrapper.get('[data-testid="explore-list-sheet"]').classes()).toContain('bottom-0')
+    expect(wrapper.get('[data-testid="explore-list-sheet"]').classes()).toContain('z-[80]')
+    expect(wrapper.get('[data-testid="explore-list-sheet"]').classes()).toContain('md:z-auto')
+    expect(wrapper.get('[data-testid="place-detail-overlay"]').classes()).toContain('h-dvh')
+    expect(wrapper.get('[data-testid="place-detail-overlay"]').classes()).toContain('bottom-0')
+    expect(wrapper.get('[data-testid="place-detail-overlay"]').classes()).toContain('z-[90]')
+    expect(wrapper.find('[data-testid="place-detail-sheet-handle"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="close-place-detail"]').classes()).toContain('absolute')
+    expect(wrapper.get('[data-testid="close-place-detail"]').classes()).toContain('top-12')
+    expect(wrapper.get('[data-testid="close-place-detail"]').classes()).toContain('md:top-4')
+    expect(wrapper.get('[data-testid="close-place-detail"]').classes()).toContain('z-20')
+    expect(wrapper.get('[data-testid="place-detail-overlay"]').classes()).toContain('overflow-hidden')
     expect(wrapper.get('[data-testid="place-detail-like"]').classes()).toContain('shrink-0')
     expect(wrapper.find('[data-testid="map-category-filters"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="show-all-pins"]').text()).toContain('전체 핀 보기')
+    expect(wrapper.find('[data-testid="show-all-pins"]').exists()).toBe(false)
     expect(wrapper.emitted('openPlace')).toBeUndefined()
 
     await wrapper.get('[data-testid="close-place-detail"]').trigger('click')
@@ -378,7 +441,8 @@ describe('ExplorePage review sorting', () => {
     await flushPromises()
 
     const sheet = wrapper.get('[data-testid="explore-list-sheet"]')
-    expect(sheet.classes()).toContain('z-40')
+    expect(sheet.classes()).toContain('z-[80]')
+    expect(sheet.classes()).toContain('md:z-auto')
     expect(sheet.classes()).toContain('md:!transform-none')
     expect(sheet.attributes('data-sheet-position')).toBe('middle')
 
@@ -386,7 +450,7 @@ describe('ExplorePage review sorting', () => {
     expect(sheet.attributes('data-sheet-position')).toBe('expanded')
   })
 
-  it('keeps the mobile place detail within the search sheet footprint', async () => {
+  it('lets the mobile place detail cover the header and expand from the middle state', async () => {
     fetchPlaces.mockResolvedValue({
       content: [{
         id: 1, title: '청계천', location: '서울', category: '관광지', rawCategory: '관광지',
@@ -405,12 +469,17 @@ describe('ExplorePage review sorting', () => {
     await wrapper.get('[data-testid="place-list-item-1"]').trigger('click')
 
     const detail = wrapper.get('[data-testid="place-detail-overlay"]')
-    expect(detail.classes()).toEqual(expect.arrayContaining(['bottom-[72px]', 'h-[76vh]', 'rounded-t-2xl', 'z-[70]']))
-    expect(detail.classes()).not.toContain('top-[56px]')
+    expect(detail.classes()).toEqual(expect.arrayContaining(['bottom-0', 'h-dvh', 'rounded-t-2xl', 'z-[90]']))
+    expect(detail.classes()).not.toContain('bottom-[72px]')
+    expect(detail.classes()).not.toContain('h-[76vh]')
     expect(detail.classes()).toContain('md:absolute')
     expect(detail.attributes('data-mobile-portal')).toBe('true')
     expect(detail.attributes('data-sheet-position')).toBe('middle')
     expect(detail.attributes('style')).toBe(wrapper.get('[data-testid="explore-list-sheet"]').attributes('style'))
+
+    await wrapper.get('[data-testid="place-detail-sheet-handle"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="place-detail-overlay"]').attributes('data-sheet-position')).toBe('expanded')
   })
 
   it('offers ticket-style keep or replace choices for a same-time place conflict', async () => {

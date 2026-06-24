@@ -887,6 +887,15 @@ describe('ScheduleDetailPage collaboration controls', () => {
 
     expect(wrapper.get('[data-testid="open-ai-place-31"]').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('[data-testid="open-ai-place-32"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="ai-analysis-group-12"]').classes()).not.toContain('rounded-xl')
+    expect(wrapper.get('[data-testid="ai-analysis-group-12"]').classes()).not.toContain('border')
+    expect(wrapper.get('[data-testid="ai-analysis-group-12"]').classes()).not.toContain('bg-slate-50/60')
+    expect(wrapper.get('[data-testid="ai-analysis-group-12"]').classes()).not.toContain('p-3')
+    expect(wrapper.get('[data-testid="ai-analysis-group-12"]').text()).not.toContain('일정 제안 2개')
+    expect(wrapper.get('[data-testid="ai-analysis-group-12"]').text()).not.toContain('#12')
+    expect(wrapper.get('[data-testid="ai-suggestion-place-31"]').classes()).toContain('bg-brand-50')
+    expect(wrapper.get('[data-testid="ai-suggestion-place-31"]').classes()).toContain('rounded-lg')
+    expect(wrapper.get('[data-testid="ai-suggestion-place-31"]').classes()).toContain('p-3')
     expect(wrapper.text()).not.toContain('DB에 연결되지 않은 장소지만 자유 일정으로 적용할 수 있습니다.')
     expect(wrapper.get('[data-testid="apply-ai-suggestion-31"]').text()).toContain('수락')
     expect(wrapper.find('[data-testid="create-ai-vote-31"]').exists()).toBe(false)
@@ -950,6 +959,9 @@ describe('ScheduleDetailPage collaboration controls', () => {
     expect(wrapper.get('[data-testid="create-ai-vote-modal"]').text()).toContain('해운대 방문')
     expect(wrapper.get('[data-testid="create-ai-vote-modal"]').text()).toContain('2026년 7월 1일')
     expect(wrapper.get('[data-testid="create-ai-vote-modal"]').text()).toContain('해운대해수욕장')
+    expect(wrapper.get('[data-testid="create-ai-vote-summary"]').classes()).not.toContain('bg-slate-50')
+    expect(wrapper.get('[data-testid="create-ai-vote-place"]').classes()).not.toContain('bg-brand-50')
+    expect(wrapper.get('[data-testid="create-ai-vote-place"]').classes()).not.toContain('rounded-lg')
 
     await wrapper.get('[data-testid="confirm-create-ai-vote"]').trigger('click')
     await flushPromises()
@@ -1019,7 +1031,7 @@ describe('ScheduleDetailPage collaboration controls', () => {
     expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('찬성')
     expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('투표 완료 1/3')
     expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('모든 팀원이 투표하면 종료됩니다.')
-    expect(wrapper.get('[data-testid="close-ai-vote"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="close-ai-vote"]').exists()).toBe(false)
   })
 
   it('automatically closes and refreshes an AI vote after the final editor ballot', async () => {
@@ -1047,7 +1059,7 @@ describe('ScheduleDetailPage collaboration controls', () => {
         accessToken: 'token',
         currentUser: { userId: 20, email: 'editor@test.com', nickname: 'editor', role: 'USER', localAccount: true },
       },
-      global: { stubs: { Transition: false } },
+      global: { stubs: { Transition: true } },
     })
     await flushPromises()
 
@@ -1060,7 +1072,7 @@ describe('ScheduleDetailPage collaboration controls', () => {
     expect(closeTripVote).toHaveBeenCalledWith('token', 1, 41)
     expect(getAiSuggestions).toHaveBeenCalled()
     expect(fetchTripSchedules).toHaveBeenCalledTimes(2)
-    expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('투표 종료')
+    expect(wrapper.find('[data-testid="ai-vote-modal"]').exists()).toBe(false)
   })
 
   it('does not automatically close after the final ballot when the user cannot edit the trip', async () => {
@@ -1079,7 +1091,7 @@ describe('ScheduleDetailPage collaboration controls', () => {
         accessToken: 'token',
         currentUser: { userId: 30, email: 'viewer@test.com', nickname: 'viewer', role: 'USER', localAccount: true },
       },
-      global: { stubs: { Transition: false } },
+      global: { stubs: { Transition: true } },
     })
     await flushPromises()
 
@@ -1089,10 +1101,16 @@ describe('ScheduleDetailPage collaboration controls', () => {
     await flushPromises()
 
     expect(closeTripVote).not.toHaveBeenCalled()
-    expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('투표 완료 3/3')
+    expect(wrapper.find('[data-testid="ai-vote-modal"]').exists()).toBe(false)
   })
 
-  it('keeps a vote open when closing fails with a schedule conflict', async () => {
+  it('closes the vote modal after casting even when automatic closing hits a schedule conflict', async () => {
+    castTripVoteBallot.mockResolvedValueOnce(createVote({
+      selectedOptionId: 501,
+      totalBallotCount: 3,
+      votedMemberCount: 3,
+      allMembersVoted: true,
+    }))
     closeTripVote.mockRejectedValueOnce(new VoteRequestError(
       409,
       '투표 또는 제안 상태가 변경되었거나 일정 시간이 충돌합니다. 최신 상태를 확인해 주세요.',
@@ -1108,21 +1126,26 @@ describe('ScheduleDetailPage collaboration controls', () => {
         accessToken: 'token',
         currentUser: { userId: 10, email: 'owner@test.com', nickname: 'owner', role: 'USER', localAccount: true },
       },
-      global: { stubs: { Transition: false } },
+      global: { stubs: { Transition: true } },
     })
     await flushPromises()
 
     await wrapper.get('[data-testid="open-ai-vote-31"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="close-ai-vote"]').trigger('click')
+    await wrapper.get('[data-testid="cast-vote-option-501"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('일정 시간이 충돌합니다')
-    expect(wrapper.find('[data-testid="close-ai-vote"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="ai-vote-modal"]').exists()).toBe(false)
     expect(fetchTripSchedules).toHaveBeenCalledTimes(1)
   })
 
   it('recovers without a failure toast when another client already closed the vote', async () => {
+    castTripVoteBallot.mockResolvedValueOnce(createVote({
+      selectedOptionId: 501,
+      totalBallotCount: 3,
+      votedMemberCount: 3,
+      allMembersVoted: true,
+    }))
     closeTripVote.mockRejectedValueOnce(new VoteRequestError(
       409,
       '투표 또는 제안 상태가 변경되었거나 일정 시간이 충돌합니다. 최신 상태를 확인해 주세요.',
@@ -1145,23 +1168,23 @@ describe('ScheduleDetailPage collaboration controls', () => {
         accessToken: 'token',
         currentUser: { userId: 10, email: 'owner@test.com', nickname: 'owner', role: 'USER', localAccount: true },
       },
-      global: { stubs: { Transition: false } },
+      global: { stubs: { Transition: true } },
     })
     await flushPromises()
 
     await wrapper.get('[data-testid="open-ai-vote-31"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="close-ai-vote"]').trigger('click')
+    await wrapper.get('[data-testid="cast-vote-option-501"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('투표 종료')
+    expect(wrapper.find('[data-testid="ai-vote-modal"]').exists()).toBe(false)
     expect(fetchTripSchedules).toHaveBeenCalledTimes(2)
     expect(wrapper.emitted('saved') ?? []).not.toContainEqual([
       '투표 또는 제안 상태가 변경되었거나 일정 시간이 충돌합니다. 최신 상태를 확인해 주세요.',
     ])
   })
 
-  it('reloads and keeps the vote open when the server says members are still missing', async () => {
+  it('reloads and closes the vote modal when the server says members are still missing', async () => {
     castTripVoteBallot.mockResolvedValueOnce(createVote({
       selectedOptionId: 501,
       totalBallotCount: 3,
@@ -1185,7 +1208,7 @@ describe('ScheduleDetailPage collaboration controls', () => {
         accessToken: 'token',
         currentUser: { userId: 10, email: 'owner@test.com', nickname: 'owner', role: 'USER', localAccount: true },
       },
-      global: { stubs: { Transition: false } },
+      global: { stubs: { Transition: true } },
     })
     await flushPromises()
 
@@ -1194,9 +1217,7 @@ describe('ScheduleDetailPage collaboration controls', () => {
     await wrapper.get('[data-testid="cast-vote-option-501"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('투표 완료 2/3')
-    expect(wrapper.get('[data-testid="ai-vote-modal"]').text()).toContain('모든 팀원이 투표하면 종료됩니다.')
-    expect(wrapper.get('[data-testid="close-ai-vote"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="ai-vote-modal"]').exists()).toBe(false)
   })
 
   it('loads schedule items for the trip', async () => {

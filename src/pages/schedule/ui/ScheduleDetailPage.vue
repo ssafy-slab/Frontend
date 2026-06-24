@@ -163,6 +163,7 @@ const suggestionGroups = computed(() => {
   })
   return Array.from(groups, ([analysisRunId, items]) => ({ analysisRunId, items }))
 })
+const singleSuggestionGroup = computed(() => (suggestionGroups.value.length === 1 ? suggestionGroups.value[0] : null))
 const aiStatusOptions: Array<{ value: AiSuggestionStatus; label: string }> = [
   { value: 'PENDING', label: '검토 대기' },
   { value: 'VOTING', label: '투표 진행 중' },
@@ -735,16 +736,18 @@ async function castVote(voteOptionId: number) {
   isCastingVote.value = true
   voteError.value = ''
   try {
+    const voteId = activeVote.value.voteId
     const updatedVote = await castTripVoteBallot(
       props.accessToken,
       props.trip.id,
-      activeVote.value.voteId,
+      voteId,
       voteOptionId,
     )
-    activeVote.value = updatedVote
+    activeVote.value = null
     if (updatedVote.status === 'OPEN' && updatedVote.allMembersVoted && canCloseVotes.value) {
-      await closeVoteAndRefresh(updatedVote.voteId)
+      await closeVoteAndRefresh(voteId, false)
     }
+    voteError.value = ''
   } catch (error) {
     voteError.value = error instanceof Error ? error.message : '투표에 참여하지 못했습니다.'
   } finally {
@@ -756,26 +759,26 @@ function isAllMembersRequiredError(error: VoteRequestError) {
   return error.serverMessage.toLowerCase().includes('all trip members must vote')
 }
 
-async function refreshClosedVoteData(voteId: number) {
+async function refreshClosedVoteData(voteId: number, keepVoteModal = true) {
   if (!props.accessToken || !props.trip?.id) return
   const refreshedVote = await getTripVote(props.accessToken, props.trip.id, voteId)
-  activeVote.value = refreshedVote
+  if (keepVoteModal) activeVote.value = refreshedVote
   await Promise.all([loadAiSuggestions(selectedStatus.value), loadScheduleItems()])
 }
 
-async function closeVoteAndRefresh(voteId: number) {
+async function closeVoteAndRefresh(voteId: number, keepVoteModal = true) {
   if (!props.accessToken || !props.trip?.id || isClosingVote.value || !canCloseVotes.value) return
   isClosingVote.value = true
   voteError.value = ''
   try {
     await closeTripVote(props.accessToken, props.trip.id, voteId)
-    await refreshClosedVoteData(voteId)
+    await refreshClosedVoteData(voteId, keepVoteModal)
     emit('saved', '투표를 종료하고 결과를 반영했습니다.')
   } catch (error) {
     if (error instanceof VoteRequestError && error.status === 409) {
       try {
         const refreshedVote = await getTripVote(props.accessToken, props.trip.id, voteId)
-        activeVote.value = refreshedVote
+        if (keepVoteModal) activeVote.value = refreshedVote
         if (refreshedVote.status === 'CLOSED') {
           await Promise.all([loadAiSuggestions(selectedStatus.value), loadScheduleItems()])
           emit('saved', '투표 종료 결과를 반영했습니다.')
@@ -794,11 +797,6 @@ async function closeVoteAndRefresh(voteId: number) {
   } finally {
     isClosingVote.value = false
   }
-}
-
-async function closeVote() {
-  if (!activeVote.value || !activeVote.value.allMembersVoted) return
-  await closeVoteAndRefresh(activeVote.value.voteId)
 }
 
 async function processAnalysisRun(analysisRunId: number, action: 'apply' | 'reject') {
@@ -1269,17 +1267,40 @@ onBeforeUnmount(closeChatSocket)
         </div>
 
         <div class="p-4">
-          <div class="mb-4 flex flex-wrap gap-2">
-            <button
-              v-for="option in aiStatusOptions"
-              :key="option.value"
-              :data-testid="`ai-status-${option.value}`"
-              class="rounded-full px-3 py-1.5 text-xs font-black transition"
-              :class="selectedStatus === option.value ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-brand-50 hover:text-brand-600'"
-              @click="selectAiStatus(option.value)"
-            >
-              {{ option.label }}
-            </button>
+          <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="option in aiStatusOptions"
+                :key="option.value"
+                :data-testid="`ai-status-${option.value}`"
+                class="rounded-full px-3 py-1.5 text-xs font-black transition"
+                :class="selectedStatus === option.value ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-brand-50 hover:text-brand-600'"
+                @click="selectAiStatus(option.value)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+            <div v-if="selectedStatus === 'PENDING' && singleSuggestionGroup" class="flex flex-wrap justify-end gap-1.5">
+              <button
+                :data-testid="`reject-ai-run-${singleSuggestionGroup.analysisRunId}`"
+                class="inline-flex h-8 items-center gap-1.5 rounded-full border border-red-100 bg-red-50/70 px-3 text-xs font-black text-red-600 transition hover:border-red-200 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="bulkProcessingRunId !== null"
+                @click="processAnalysisRun(singleSuggestionGroup.analysisRunId, 'reject')"
+              >
+                <Trash2 :size="13" />
+                전체 거절
+              </button>
+              <button
+                v-if="!isTeamTrip"
+                :data-testid="`apply-ai-run-${singleSuggestionGroup.analysisRunId}`"
+                class="inline-flex h-8 items-center gap-1.5 rounded-full bg-brand-500 px-3 text-xs font-black text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="bulkProcessingRunId !== null"
+                @click="processAnalysisRun(singleSuggestionGroup.analysisRunId, 'apply')"
+              >
+                <CalendarCheck :size="13" />
+                {{ bulkProcessingRunId === singleSuggestionGroup.analysisRunId ? '처리 중' : '전체 적용' }}
+              </button>
+            </div>
           </div>
 
           <p v-if="isLoadingSuggestions" class="rounded-lg bg-brand-50 px-3 py-3 text-sm font-black text-brand-600">
@@ -1301,25 +1322,33 @@ onBeforeUnmount(closeChatSocket)
           </p>
 
           <div v-else class="space-y-5">
-            <section v-for="group in suggestionGroups" :key="group.analysisRunId" class="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-              <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <p class="text-xs font-black text-slate-500">분석 결과 #{{ group.analysisRunId }} · {{ group.items.length }}개</p>
-                <div v-if="selectedStatus === 'PENDING'" class="flex gap-2">
+            <section
+              v-for="group in suggestionGroups"
+              :key="group.analysisRunId"
+              :data-testid="`ai-analysis-group-${group.analysisRunId}`"
+            >
+              <div
+                v-if="selectedStatus === 'PENDING' && suggestionGroups.length > 1"
+                class="mb-3 flex flex-wrap items-center justify-end gap-2 px-0.5"
+              >
+                <div v-if="selectedStatus === 'PENDING'" class="flex flex-wrap justify-end gap-1.5">
                   <button
                     :data-testid="`reject-ai-run-${group.analysisRunId}`"
-                    class="rounded-lg bg-white px-3 py-2 text-xs font-black text-slate-600 ring-1 ring-slate-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                    class="inline-flex h-8 items-center gap-1.5 rounded-full border border-red-100 bg-red-50/70 px-3 text-xs font-black text-red-600 transition hover:border-red-200 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
                     :disabled="bulkProcessingRunId !== null"
                     @click="processAnalysisRun(group.analysisRunId, 'reject')"
                   >
+                    <Trash2 :size="13" />
                     전체 거절
                   </button>
                   <button
                     v-if="!isTeamTrip"
                     :data-testid="`apply-ai-run-${group.analysisRunId}`"
-                    class="rounded-lg bg-brand-500 px-3 py-2 text-xs font-black text-white hover:bg-brand-600 disabled:opacity-50"
+                    class="inline-flex h-8 items-center gap-1.5 rounded-full bg-brand-500 px-3 text-xs font-black text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
                     :disabled="bulkProcessingRunId !== null"
                     @click="processAnalysisRun(group.analysisRunId, 'apply')"
                   >
+                    <CalendarCheck :size="13" />
                     {{ bulkProcessingRunId === group.analysisRunId ? '처리 중' : '전체 적용' }}
                   </button>
                 </div>
@@ -1340,7 +1369,11 @@ onBeforeUnmount(closeChatSocket)
                     </span>
                   </div>
 
-                  <div v-if="suggestion.suggestedPlaceName" class="mt-3 rounded-lg bg-brand-50 p-3">
+                  <div
+                    v-if="suggestion.suggestedPlaceName"
+                    :data-testid="`ai-suggestion-place-${suggestion.aiSuggestionId}`"
+                    class="mt-3 rounded-lg bg-brand-50 p-3"
+                  >
                     <p class="text-xs font-black text-brand-500">장소</p>
                     <p class="mt-1 font-black text-slate-900">{{ suggestion.suggestedPlaceName }}</p>
                     <p v-if="suggestion.suggestedRegionHint" class="mt-0.5 text-xs font-semibold text-slate-500">{{ suggestion.suggestedRegionHint }}</p>
@@ -1782,15 +1815,19 @@ onBeforeUnmount(closeChatSocket)
             </button>
           </div>
 
-          <div class="mt-5 rounded-xl bg-slate-50 p-4">
+          <div data-testid="create-ai-vote-summary" class="mt-5 border-y border-slate-200 py-4">
             <p class="text-lg font-black text-slate-950">{{ voteCreationTarget.title }}</p>
-            <p class="mt-2 text-sm font-bold text-brand-500">
+            <p class="mt-2 text-sm font-bold text-slate-600">
               {{ formatSuggestionDate(voteCreationTarget.scheduleDate) }} · {{ formatSuggestionTime(voteCreationTarget.startTime) }}
               <template v-if="voteCreationTarget.endTime"> ~ {{ formatSuggestionTime(voteCreationTarget.endTime) }}</template>
             </p>
-            <div v-if="voteCreationTarget.suggestedPlaceName" class="mt-3 rounded-lg bg-brand-50 px-3 py-2">
-              <p class="text-xs font-black text-brand-500">장소</p>
-              <p class="mt-1 text-sm font-black text-slate-900">{{ voteCreationTarget.suggestedPlaceName }}</p>
+            <div
+              v-if="voteCreationTarget.suggestedPlaceName"
+              data-testid="create-ai-vote-place"
+              class="mt-3 flex items-baseline gap-3 border-t border-slate-100 pt-3"
+            >
+              <p class="shrink-0 text-xs font-black text-brand-500">장소</p>
+              <p class="text-sm font-black text-slate-900">{{ voteCreationTarget.suggestedPlaceName }}</p>
             </div>
           </div>
 
@@ -1865,21 +1902,6 @@ onBeforeUnmount(closeChatSocket)
           >
             모든 팀원이 투표하면 종료됩니다.
           </p>
-
-          <div class="mt-5 flex items-center justify-between gap-2">
-            <span class="text-xs font-black" :class="activeVote.status === 'OPEN' ? 'text-amber-600' : 'text-slate-500'">
-              {{ activeVote.status === 'OPEN' ? '투표 진행 중' : '투표 종료' }}
-            </span>
-            <button
-              v-if="canCloseVotes && activeVote.status === 'OPEN'"
-              data-testid="close-ai-vote"
-              class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-black text-white disabled:opacity-50"
-              :disabled="isClosingVote || isCastingVote || !activeVote.allMembersVoted"
-              @click="closeVote"
-            >
-              {{ isClosingVote ? '종료 중' : '투표 종료' }}
-            </button>
-          </div>
         </section>
       </div>
     </Transition>

@@ -89,6 +89,8 @@ const listScroller = ref<HTMLElement | null>(null)
 const loadMoreTarget = ref<HTMLElement | null>(null)
 const listSheet = ref<HTMLElement | null>(null)
 type ListSheetPosition = 'expanded' | 'middle' | 'collapsed'
+const SHEET_COLLAPSED_VISIBLE_HEIGHT = 56
+const MOBILE_SELECTED_PLACE_CENTER_LAT_OFFSET = 0.0018
 const listSheetPosition = ref<ListSheetPosition>('middle')
 const isDraggingListSheet = ref(false)
 const didDragListSheet = ref(false)
@@ -108,15 +110,30 @@ const selectedPlace = computed(() =>
 )
 const focusedPlace = computed(() => selectedPlace.value)
 const mapMarkers = computed(() =>
-  (focusedPlace.value ? [focusedPlace.value] : places.value).map((place) => ({
+  places.value.map((place) => ({
     id: place.id,
     title: place.title,
     position: place.coordinates,
     category: place.category,
   })),
 )
-const mapCenter = computed(() => focusedPlace.value?.coordinates ?? places.value[0]?.coordinates ?? { lat: 37.5665, lng: 126.978 })
-const mapLevel = computed(() => (focusedPlace.value ? 4 : 8))
+const mapCenter = computed(() => {
+  if (focusedPlace.value) {
+    const center = focusedPlace.value.coordinates
+    if (!isDesktopViewport.value) {
+      return {
+        ...center,
+        lat: center.lat - MOBILE_SELECTED_PLACE_CENTER_LAT_OFFSET,
+      }
+    }
+    return center
+  }
+  return places.value[0]?.coordinates ?? { lat: 37.5665, lng: 126.978 }
+})
+const mapLevel = computed(() => {
+  if (focusedPlace.value) return isDesktopViewport.value ? 4 : 3
+  return 4
+})
 const provinces = computed(() => regions.value.filter((region) => region.regionLevel === 1 && region.placeCount > 0))
 const districts = computed(() =>
   regions.value.filter((region) => region.regionLevel === 2 && String(region.parentRegionId ?? '') === selectedProvinceId.value && region.placeCount > 0),
@@ -297,11 +314,6 @@ function selectPlaceOnMap(place: Place) {
   selectedPlaceId.value = place.id
 }
 
-function showAllPlacesOnMap() {
-  selectedPlaceId.value = null
-  emit('closePlace')
-}
-
 function closePlaceOverlay() {
   selectedPlaceId.value = null
   emit('closePlace')
@@ -460,11 +472,11 @@ function handleListSheetHandleClick() {
 }
 
 function getListSheetOffsets() {
-  const height = listSheet.value?.offsetHeight ?? 0
+  const height = window.innerHeight
   return {
     expanded: 0,
-    middle: Math.max(height - window.innerHeight * 0.5, 0),
-    collapsed: Math.max(height - 56, 0),
+    middle: Math.round(height * 0.46),
+    collapsed: Math.max(height - SHEET_COLLAPSED_VISIBLE_HEIGHT, 0),
   }
 }
 
@@ -645,7 +657,9 @@ watch(selectedSort, () => {
 watch(
   () => selectedPlace.value?.id,
   (placeId) => {
-    if (placeId) void loadPlaceDetails(placeId)
+    if (!placeId) return
+    if (!isDesktopViewport.value && listSheetPosition.value === 'collapsed') listSheetPosition.value = 'middle'
+    void loadPlaceDetails(placeId)
   },
 )
 
@@ -688,13 +702,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="min-h-[calc(100vh-56px)] bg-slate-50 md:h-[calc(100vh-64px)] md:overflow-hidden">
-    <div class="grid min-h-[calc(100vh-56px)] bg-white shadow-sm md:h-full md:min-h-0 md:grid-cols-[340px_minmax(0,1fr)] lg:grid-cols-[360px_minmax(0,1fr)] xl:grid-cols-[390px_minmax(0,1fr)]">
+  <section class="h-[calc(100dvh-56px)] bg-slate-50 md:h-[calc(100vh-64px)] md:overflow-hidden">
+    <div class="grid h-full bg-white shadow-sm md:min-h-0 md:grid-cols-[340px_minmax(0,1fr)] lg:grid-cols-[360px_minmax(0,1fr)] xl:grid-cols-[390px_minmax(0,1fr)]">
       <aside
         ref="listSheet"
         data-testid="explore-list-sheet"
         :data-sheet-position="listSheetPosition"
-        class="fixed inset-x-0 bottom-[72px] z-40 flex max-h-[76vh] min-h-0 flex-col overflow-hidden rounded-t-2xl border-t border-slate-200 bg-white shadow-2xl shadow-slate-900/15 transition-transform duration-300 md:static md:order-1 md:max-h-none md:!transform-none md:rounded-none md:border-r md:border-t-0 md:shadow-none"
+        class="fixed inset-x-0 bottom-0 z-[80] flex h-dvh min-h-0 flex-col overflow-hidden rounded-t-2xl border-t border-slate-200 bg-white shadow-2xl shadow-slate-900/15 transition-transform duration-300 md:static md:order-1 md:z-auto md:h-auto md:max-h-none md:!transform-none md:rounded-none md:border-r md:border-t-0 md:shadow-none"
         :style="listSheetDragStyle"
       >
         <button
@@ -867,7 +881,7 @@ onBeforeUnmount(() => {
         </div>
       </aside>
 
-        <div class="relative h-[calc(100vh-128px)] overflow-hidden bg-[#f5f1e8] sm:h-[calc(100vh-132px)] md:order-2 md:h-full">
+        <div class="relative h-full overflow-hidden bg-[#f5f1e8] md:order-2">
           <div class="absolute left-3 right-3 top-3 z-40 flex items-start gap-2 md:left-4 md:right-4">
             <div
               v-if="!selectedPlace"
@@ -886,15 +900,6 @@ onBeforeUnmount(() => {
               </button>
             </div>
 
-            <button
-              v-if="focusedPlace"
-              data-testid="show-all-pins"
-              class="ml-auto inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-brand-200 bg-white/95 px-3.5 text-xs font-black text-brand-600 shadow-md shadow-indigo-100/70 backdrop-blur transition hover:border-brand-300 hover:bg-brand-50"
-              @click="showAllPlacesOnMap"
-            >
-              <MapPin :size="14" />
-              전체 핀 보기
-            </button>
           </div>
 
           <KakaoMap
@@ -913,8 +918,26 @@ onBeforeUnmount(() => {
               data-mobile-portal="true"
               :data-sheet-position="listSheetPosition"
               :style="listSheetDragStyle"
-              class="fixed inset-x-0 bottom-[72px] z-[70] h-[76vh] overflow-y-auto rounded-t-2xl bg-white shadow-2xl md:absolute md:inset-auto md:bottom-4 md:left-4 md:top-4 md:h-auto md:!transform-none md:z-50 md:w-[min(420px,calc(100%-2rem))] md:rounded-2xl md:border md:border-slate-200"
+              class="fixed inset-x-0 bottom-0 z-[90] h-dvh overflow-hidden rounded-t-2xl bg-white shadow-2xl md:absolute md:inset-auto md:bottom-4 md:left-4 md:top-4 md:h-auto md:!transform-none md:z-50 md:w-[min(420px,calc(100%-2rem))] md:rounded-2xl md:border md:border-slate-200"
             >
+            <button
+              data-testid="place-detail-sheet-handle"
+              class="grid min-h-10 w-full touch-none place-items-center bg-white md:hidden"
+              :aria-label="listSheetPosition === 'expanded' ? '여행지 상세 내리기' : '여행지 상세 올리기'"
+              @click="handleListSheetHandleClick"
+              @pointerdown="startListSheetDrag"
+            >
+              <span class="h-1.5 w-12 rounded-full bg-slate-300"></span>
+            </button>
+            <button
+              data-testid="close-place-detail"
+              class="absolute right-6 top-12 z-20 grid size-9 place-items-center rounded-full bg-white/95 text-slate-700 shadow-sm backdrop-blur transition hover:bg-white md:top-4"
+              aria-label="상세 패널 닫기"
+              @click="closePlaceOverlay"
+            >
+              <X :size="19" />
+            </button>
+            <div class="h-full overflow-y-auto">
             <div class="relative aspect-[16/10] bg-slate-100">
               <SafeImage :src="placeImage(selectedPlace, true)" :alt="selectedPlace.title" class="h-full w-full object-cover" />
               <div
@@ -924,14 +947,6 @@ onBeforeUnmount(() => {
               >
                 이미지 준비 중
               </div>
-              <button
-                data-testid="close-place-detail"
-                class="absolute right-4 top-4 grid size-9 place-items-center rounded-full bg-white/95 text-slate-700 shadow-sm backdrop-blur transition hover:bg-white"
-                aria-label="상세 패널 닫기"
-                @click="closePlaceOverlay"
-              >
-                <X :size="19" />
-              </button>
             </div>
 
             <div class="p-5">
@@ -1093,6 +1108,7 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
               </section>
+            </div>
             </div>
             </section>
           </Teleport>

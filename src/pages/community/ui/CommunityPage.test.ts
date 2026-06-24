@@ -8,6 +8,27 @@ const { bookmarkCommunityPost, fetchCommunityPosts, unbookmarkCommunityPost } = 
   unbookmarkCommunityPost: vi.fn(),
 }))
 
+function createPost(overrides: Record<string, unknown> = {}) {
+  return {
+    postId: 1,
+    category: 'TRAVEL_TIP',
+    title: 'Uniform card',
+    excerpt: null,
+    imageUrl: 'https://example.com/card.jpg',
+    placeId: null,
+    placeName: null,
+    authorNickname: 'traveler',
+    viewCount: 1,
+    likeCount: 2,
+    commentCount: 3,
+    bookmarkedByMe: false,
+    likedByMe: false,
+    mine: false,
+    createdAt: '2026-06-24T00:00:00',
+    ...overrides,
+  }
+}
+
 vi.mock('@/entities/community/api/communityApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/entities/community/api/communityApi')>()
   return {
@@ -27,24 +48,8 @@ describe('CommunityPage card layout', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     fetchCommunityPosts.mockResolvedValue([
-      {
-        postId: 1,
-        category: 'TRAVEL_TIP',
-        title: 'Uniform card',
-        excerpt: null,
-        imageUrl: 'https://example.com/card.jpg',
-        placeId: null,
-        placeName: null,
-        authorNickname: 'traveler',
-        viewCount: 1,
-        likeCount: 2,
-        commentCount: 3,
-        bookmarkedByMe: false,
-        likedByMe: false,
-        mine: false,
-        createdAt: '2026-06-24T00:00:00',
-      },
-      {
+      createPost(),
+      createPost({
         postId: 2,
         category: 'PLACE_REVIEW',
         title: 'Card with hashtag',
@@ -60,7 +65,7 @@ describe('CommunityPage card layout', () => {
         likedByMe: false,
         mine: false,
         createdAt: '2026-06-23T00:00:00',
-      },
+      }),
     ])
   })
 
@@ -89,6 +94,7 @@ describe('CommunityPage card layout', () => {
     expect(footer.classes()).toContain('border-t')
     expect(wrapper.get('[data-testid="community-card-excerpt"]').classes()).not.toContain('min-h-9')
     expect(wrapper.get('[data-testid="community-card-excerpt"]').classes()).toContain('mb-2')
+    expect(wrapper.find('[data-testid="community-empty"]').exists()).toBe(false)
 
     const placeRows = wrapper.findAll('[data-testid="community-card-place"]')
     expect(placeRows).toHaveLength(1)
@@ -111,6 +117,31 @@ describe('CommunityPage card layout', () => {
     await wrapper.get('[data-testid="bookmark-post-2"]').trigger('click')
     await flushPromises()
     expect(unbookmarkCommunityPost).toHaveBeenCalledWith(2, 'token')
+  })
+
+  it('paginates community cards with previous and next controls', async () => {
+    fetchCommunityPosts.mockResolvedValue(
+      Array.from({ length: 10 }, (_, index) => createPost({
+        postId: index + 1,
+        title: `Post ${index + 1}`,
+        createdAt: `2026-06-${String(24 - index).padStart(2, '0')}T00:00:00`,
+      })),
+    )
+    const wrapper = mount(CommunityPage)
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-testid="community-card"]')).toHaveLength(9)
+    expect(wrapper.find('[data-testid="community-empty"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="community-page-indicator"]').text()).toBe('1 / 2')
+    expect(wrapper.get('[data-testid="community-page-previous"]').attributes('disabled')).toBeDefined()
+
+    await wrapper.get('[data-testid="community-page-next"]').trigger('click')
+    expect(wrapper.findAll('[data-testid="community-card"]')).toHaveLength(1)
+    expect(wrapper.get('[data-testid="community-page-indicator"]').text()).toBe('2 / 2')
+    expect(wrapper.get('[data-testid="community-page-next"]').attributes('disabled')).toBeDefined()
+
+    await wrapper.get('[data-testid="community-page-previous"]').trigger('click')
+    expect(wrapper.findAll('[data-testid="community-card"]')).toHaveLength(9)
   })
 
   it('rolls back a failed bookmark and sends guests to login', async () => {
