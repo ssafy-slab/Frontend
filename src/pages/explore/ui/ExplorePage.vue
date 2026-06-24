@@ -2,24 +2,35 @@
 import {
   Bed,
   Bike,
+  CalendarPlus,
   ChevronDown,
+  Cloud,
+  CloudRain,
+  CloudSnow,
+  CloudSun,
+  Fuel,
   Heart,
   HelpCircle,
   Landmark,
   LoaderCircle,
   MapPin,
   Palette,
+  Pill,
   RotateCcw,
   Search,
   ShoppingBag,
   Sparkles,
   Star,
+  Store,
+  Sun,
   Utensils,
   X,
 } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { fetchPlaceFilters, fetchPlaces } from '@/entities/place/api/placeApi'
-import type { PlaceCategory, RegionFilter } from '@/entities/place/api/placeApi'
+import { fetchPlaceFilters, fetchPlaceNearbyFacilities, fetchPlaces, fetchPlaceWeather } from '@/entities/place/api/placeApi'
+import type { NearbyFacilitiesResponse, NearbyFacilityType, PlaceCategory, PlaceWeather, RegionFilter } from '@/entities/place/api/placeApi'
+import { createPlaceReview, deleteMyPlaceReview, fetchPlaceReviews, updateMyPlaceReview } from '@/entities/review/api/reviewApi'
+import type { PlaceReview, PlaceReviewSummary } from '@/entities/review/api/reviewApi'
 import type { Place, Trip } from '@/entities/travel/model/travel'
 import { createTripSchedule, fetchTripSchedules, updateTripSchedule } from '@/entities/travel/api/tripApi'
 import type { TripSchedulePayload, TripScheduleResponse } from '@/entities/travel/api/tripApi'
@@ -29,9 +40,16 @@ import SafeImage from '@/shared/ui/SafeImage.vue'
 const props = defineProps<{
   accessToken: string
   trips: Trip[]
+  targetPlace?: Place | null
 }>()
 
 const pageSize = 20
+const fallbackPlaceImages = [
+  'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=75',
+  'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=900&q=75',
+  'https://images.unsplash.com/photo-1506816561089-5cc37b3aa9b0?auto=format&fit=crop&w=900&q=75',
+  'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=900&q=75',
+]
 const selectedPlaceId = ref<number | null>(null)
 const likedIds = ref(new Set<number>())
 const selectedCategory = ref('')
@@ -52,10 +70,26 @@ const showAddModal = ref(false)
 const isAddingToTrip = ref(false)
 const replaceCandidate = ref<TripScheduleResponse | null>(null)
 const addTarget = ref<Place | null>(null)
+const weather = ref<PlaceWeather | null>(null)
+const nearbyFacilities = ref<NearbyFacilitiesResponse | null>(null)
+const reviews = ref<PlaceReview[]>([])
+const myReview = ref<PlaceReview | null>(null)
+const reviewText = ref('')
+const reviewRating = ref(0)
+const weatherLoading = ref(false)
+const facilitiesLoading = ref(false)
+const reviewsLoading = ref(false)
+const reviewSaving = ref(false)
+const detailMessage = ref('')
+const showReviewModal = ref(false)
+const reviewPage = ref(0)
+const reviewPageSize = 3
+const isDesktopViewport = ref(window.innerWidth >= 768)
 const listScroller = ref<HTMLElement | null>(null)
 const loadMoreTarget = ref<HTMLElement | null>(null)
 const listSheet = ref<HTMLElement | null>(null)
-const isListSheetExpanded = ref(true)
+type ListSheetPosition = 'expanded' | 'middle' | 'collapsed'
+const listSheetPosition = ref<ListSheetPosition>('middle')
 const isDraggingListSheet = ref(false)
 const didDragListSheet = ref(false)
 const listSheetDragStartY = ref(0)
@@ -68,13 +102,17 @@ const addDraft = reactive({
   memo: '',
 })
 
-const selectedPlace = computed(() => places.value.find((place) => place.id === selectedPlaceId.value) ?? null)
-const focusedPlace = computed(() => places.value.find((place) => place.id === selectedPlaceId.value) ?? null)
+const selectedPlace = computed(() =>
+  places.value.find((place) => place.id === selectedPlaceId.value)
+  ?? (props.targetPlace?.id === selectedPlaceId.value ? props.targetPlace : null),
+)
+const focusedPlace = computed(() => selectedPlace.value)
 const mapMarkers = computed(() =>
   (focusedPlace.value ? [focusedPlace.value] : places.value).map((place) => ({
     id: place.id,
     title: place.title,
     position: place.coordinates,
+    category: place.category,
   })),
 )
 const mapCenter = computed(() => focusedPlace.value?.coordinates ?? places.value[0]?.coordinates ?? { lat: 37.5665, lng: 126.978 })
@@ -89,15 +127,53 @@ const sortOptions = [
   { value: 'rating' as const, label: '평점 높은 순' },
 ]
 const upcomingTrips = computed(() => props.trips.filter((trip) => trip.phase === 'upcoming'))
-const listSheetDragStyle = computed(() => {
-  if (!isDraggingListSheet.value || !listSheet.value) return undefined
+const nearbyFacilityTypes: { type: NearbyFacilityType; label: string; icon: typeof Fuel }[] = [
+  { type: 'GAS_STATION', label: '주유소', icon: Fuel },
+  { type: 'PHARMACY', label: '약국', icon: Pill },
+  { type: 'CONVENIENCE_STORE', label: '편의점', icon: Store },
+]
+const nearbyFacilityItems = computed(() => nearbyFacilityTypes.map((item) => {
+  const facilities = nearbyFacilities.value?.groups.find((group) => group.facilityType === item.type)?.facilities ?? []
+  const nearest = [...facilities].sort((left, right) => Number(left.distanceM ?? Infinity) - Number(right.distanceM ?? Infinity))[0] ?? null
+  return { ...item, nearest }
+}))
+const reviewPageCount = computed(() => Math.max(1, Math.ceil(reviews.value.length / reviewPageSize)))
+const paginatedReviews = computed(() => reviews.value.slice(reviewPage.value * reviewPageSize, (reviewPage.value + 1) * reviewPageSize))
+const futureWeatherForecasts = computed(() =>
+  (weather.value?.dailyForecasts ?? [])
+    .filter((forecast) => !['오늘', 'TODAY'].includes(String(forecast.dayLabel ?? '').toUpperCase()))
+    .slice(0, 3),
+)
+const todayWeatherDate = computed(() => {
+  const todayForecast = weather.value?.dailyForecasts?.find((forecast) =>
+    ['오늘', 'TODAY'].includes(String(forecast.dayLabel ?? '').toUpperCase()),
+  )
+  const date = todayForecast?.forecastDate ? new Date(`${todayForecast.forecastDate}T00:00:00`) : new Date()
+  if (Number.isNaN(date.getTime())) return '오늘'
+  const weekdays = ['일', '월', '화', '수', '목', '금', '토']
+  return `오늘 · ${date.getMonth() + 1}월 ${date.getDate()}일 (${weekdays[date.getDay()]})`
+})
 
-  const collapsedOffset = getCollapsedListSheetOffset()
-  const baseOffset = isListSheetExpanded.value ? 0 : collapsedOffset
-  const nextOffset = Math.min(Math.max(baseOffset + listSheetDragDeltaY.value, 0), collapsedOffset)
+function hasPlaceImage(place: Place) {
+  const candidates = [place.detailImage, place.thumbnailImage, place.image]
+  return candidates.some((image) => Boolean(image && !image.endsWith('/images/default-place.svg') && image !== '/images/default-place.svg'))
+}
+
+function placeImage(place: Place, detail = false) {
+  if (hasPlaceImage(place)) return detail ? place.detailImage || place.image : place.thumbnailImage || place.image
+  return fallbackPlaceImages[Math.abs(place.id) % fallbackPlaceImages.length]
+}
+const listSheetDragStyle = computed(() => {
+  if (!listSheet.value) return undefined
+
+  const offsets = getListSheetOffsets()
+  const baseOffset = offsets[listSheetPosition.value]
+  const nextOffset = isDraggingListSheet.value
+    ? Math.min(Math.max(baseOffset + listSheetDragDeltaY.value, 0), offsets.collapsed)
+    : baseOffset
   return {
     transform: `translateY(${nextOffset}px)`,
-    transition: 'none',
+    transition: isDraggingListSheet.value ? 'none' : undefined,
   }
 })
 
@@ -117,6 +193,7 @@ let loadMoreObserver: IntersectionObserver | undefined
 
 const emit = defineEmits<{
   openPlace: [place: Place]
+  closePlace: []
   saved: [message: string]
 }>()
 
@@ -147,7 +224,7 @@ async function loadPlaces(nextPage = 0) {
     page.value = result.page
     totalElements.value = result.totalElements
     hasNext.value = result.hasNext
-    if (nextPage === 0) selectedPlaceId.value = null
+    if (nextPage === 0) selectedPlaceId.value = props.targetPlace?.id ?? null
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '여행지를 불러오지 못했습니다.'
   } finally {
@@ -222,10 +299,156 @@ function selectPlaceOnMap(place: Place) {
 
 function showAllPlacesOnMap() {
   selectedPlaceId.value = null
+  emit('closePlace')
+}
+
+function closePlaceOverlay() {
+  selectedPlaceId.value = null
+  emit('closePlace')
+}
+
+function formatTemperature(value: number | string | null | undefined) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? `${parsed.toFixed(1)}°C` : '-'
+}
+
+function formatForecastTemperature(value: number | string | null | undefined) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? `${parsed.toFixed(1)}°` : '-'
+}
+
+function formatDistance(value: number | string | null) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? `${Math.round(parsed)}m` : ''
+}
+
+function weatherLabel(sky: string | number | null, precipitation: string | number | null) {
+  const precipitationCode = String(precipitation ?? '').toUpperCase()
+  if (precipitationCode && !['0', 'NONE', 'PTY_0'].includes(precipitationCode)) {
+    if (precipitationCode.includes('SNOW') || precipitationCode === '3') return '눈'
+    return '비'
+  }
+  const skyCode = String(sky ?? '').toUpperCase()
+  if (['1', 'CLEAR', 'SUNNY', 'SKY_1'].includes(skyCode)) return '맑음'
+  if (['3', 'MOSTLY_CLOUDY', 'PARTLY_CLOUDY', 'SKY_3'].includes(skyCode)) return '구름많음'
+  return '흐림'
+}
+
+function weatherIcon(sky: string | number | null, precipitation: string | number | null) {
+  const label = weatherLabel(sky, precipitation)
+  if (label === '눈') return CloudSnow
+  if (label === '비') return CloudRain
+  if (label === '맑음') return Sun
+  if (label === '구름많음') return CloudSun
+  return Cloud
+}
+
+function applyReviewSummary(summary: PlaceReviewSummary) {
+  reviews.value = summary.reviews
+  myReview.value = summary.myReview
+  reviewRating.value = summary.myReview?.rating ?? 0
+  reviewText.value = summary.myReview?.content ?? ''
+  if (selectedPlace.value) {
+    selectedPlace.value.rating = Number(summary.averageRating)
+    selectedPlace.value.reviewCount = String(summary.reviewCount)
+  }
+  reviewPage.value = 0
+}
+
+let detailRequestId = 0
+async function loadPlaceDetails(placeId: number) {
+  const requestId = ++detailRequestId
+  weatherLoading.value = true
+  facilitiesLoading.value = true
+  reviewsLoading.value = true
+  detailMessage.value = ''
+  weather.value = null
+  nearbyFacilities.value = null
+  reviews.value = []
+  reviewPage.value = 0
+  myReview.value = null
+  reviewText.value = ''
+  reviewRating.value = 0
+
+  void fetchPlaceWeather(placeId)
+    .then((result) => {
+      if (requestId === detailRequestId) weather.value = result
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      if (requestId === detailRequestId) weatherLoading.value = false
+    })
+
+  void fetchPlaceNearbyFacilities(placeId, { limit: 10, types: nearbyFacilityTypes.map((item) => item.type) })
+    .then((result) => {
+      if (requestId === detailRequestId) nearbyFacilities.value = result
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      if (requestId === detailRequestId) facilitiesLoading.value = false
+    })
+
+  void fetchPlaceReviews(placeId, props.accessToken || undefined)
+    .then((result) => {
+      if (requestId === detailRequestId) applyReviewSummary(result)
+    })
+    .catch((error) => {
+      if (requestId === detailRequestId) detailMessage.value = error instanceof Error ? error.message : '리뷰를 불러오지 못했습니다.'
+    })
+    .finally(() => {
+      if (requestId === detailRequestId) reviewsLoading.value = false
+    })
+}
+
+async function savePlaceReview() {
+  if (!selectedPlace.value) return
+  if (!props.accessToken) {
+    emit('saved', '리뷰를 작성하려면 로그인이 필요합니다.')
+    return
+  }
+  if (!reviewRating.value) {
+    detailMessage.value = '별점을 선택해주세요.'
+    return
+  }
+  reviewSaving.value = true
+  detailMessage.value = ''
+  try {
+    const editing = Boolean(myReview.value)
+    const payload = { rating: reviewRating.value, content: reviewText.value.trim() }
+    const summary = editing
+      ? await updateMyPlaceReview(selectedPlace.value.id, props.accessToken, payload)
+      : await createPlaceReview(selectedPlace.value.id, props.accessToken, payload)
+    applyReviewSummary(summary)
+    showReviewModal.value = false
+    emit('saved', editing ? '리뷰가 저장되었습니다.' : '리뷰가 등록되었습니다.')
+  } catch (error) {
+    detailMessage.value = error instanceof Error ? error.message : '리뷰를 저장하지 못했습니다.'
+  } finally {
+    reviewSaving.value = false
+  }
+}
+
+async function deletePlaceReview() {
+  if (!selectedPlace.value || !props.accessToken || !myReview.value) return
+  reviewSaving.value = true
+  try {
+    applyReviewSummary(await deleteMyPlaceReview(selectedPlace.value.id, props.accessToken))
+    showReviewModal.value = false
+    emit('saved', '리뷰가 삭제되었습니다.')
+  } catch (error) {
+    detailMessage.value = error instanceof Error ? error.message : '리뷰를 삭제하지 못했습니다.'
+  } finally {
+    reviewSaving.value = false
+  }
 }
 
 function toggleListSheet() {
-  isListSheetExpanded.value = !isListSheetExpanded.value
+  const next: Record<ListSheetPosition, ListSheetPosition> = {
+    collapsed: 'middle',
+    middle: 'expanded',
+    expanded: 'collapsed',
+  }
+  listSheetPosition.value = next[listSheetPosition.value]
 }
 
 function handleListSheetHandleClick() {
@@ -236,8 +459,13 @@ function handleListSheetHandleClick() {
   toggleListSheet()
 }
 
-function getCollapsedListSheetOffset() {
-  return Math.max((listSheet.value?.offsetHeight ?? 0) - 56, 0)
+function getListSheetOffsets() {
+  const height = listSheet.value?.offsetHeight ?? 0
+  return {
+    expanded: 0,
+    middle: Math.max(height - window.innerHeight * 0.5, 0),
+    collapsed: Math.max(height - 56, 0),
+  }
 }
 
 function startListSheetDrag(event: PointerEvent) {
@@ -261,18 +489,22 @@ function dragListSheet(event: PointerEvent) {
 function endListSheetDrag() {
   if (!isDraggingListSheet.value) return
 
-  const threshold = 72
-  if (isListSheetExpanded.value && listSheetDragDeltaY.value > threshold) {
-    isListSheetExpanded.value = false
-  } else if (!isListSheetExpanded.value && listSheetDragDeltaY.value < -threshold) {
-    isListSheetExpanded.value = true
-  }
+  const offsets = getListSheetOffsets()
+  const currentOffset = offsets[listSheetPosition.value] + listSheetDragDeltaY.value
+  listSheetPosition.value = (Object.entries(offsets) as [ListSheetPosition, number][])
+    .reduce((nearest, candidate) =>
+      Math.abs(candidate[1] - currentOffset) < Math.abs(nearest[1] - currentOffset) ? candidate : nearest,
+    )[0]
 
   isDraggingListSheet.value = false
   listSheetDragDeltaY.value = 0
   window.removeEventListener('pointermove', dragListSheet)
   window.removeEventListener('pointerup', endListSheetDrag)
   window.removeEventListener('pointercancel', endListSheetDrag)
+}
+
+function updateViewportMode() {
+  isDesktopViewport.value = window.innerWidth >= 768
 }
 
 function toApiTime(time: string) {
@@ -410,7 +642,30 @@ watch(selectedSort, () => {
   scheduleFilterReload()
 })
 
+watch(
+  () => selectedPlace.value?.id,
+  (placeId) => {
+    if (placeId) void loadPlaceDetails(placeId)
+  },
+)
+
+watch(
+  () => props.targetPlace,
+  (place) => {
+    if (place) selectedPlaceId.value = place.id
+  },
+  { immediate: true },
+)
+
+watch(
+  () => props.accessToken,
+  () => {
+    if (selectedPlace.value) void loadPlaceDetails(selectedPlace.value.id)
+  },
+)
+
 onMounted(async () => {
+  window.addEventListener('resize', updateViewportMode)
   try {
     await loadFilters()
   } catch {
@@ -428,6 +683,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointermove', dragListSheet)
   window.removeEventListener('pointerup', endListSheetDrag)
   window.removeEventListener('pointercancel', endListSheetDrag)
+  window.removeEventListener('resize', updateViewportMode)
 })
 </script>
 
@@ -436,13 +692,15 @@ onBeforeUnmount(() => {
     <div class="grid min-h-[calc(100vh-56px)] bg-white shadow-sm md:h-full md:min-h-0 md:grid-cols-[340px_minmax(0,1fr)] lg:grid-cols-[360px_minmax(0,1fr)] xl:grid-cols-[390px_minmax(0,1fr)]">
       <aside
         ref="listSheet"
-        class="fixed inset-x-0 bottom-[72px] z-40 flex max-h-[76vh] min-h-0 flex-col overflow-hidden rounded-t-2xl border-t border-slate-200 bg-white shadow-2xl shadow-slate-900/15 transition-transform duration-300 md:static md:order-1 md:max-h-none md:translate-y-0 md:rounded-none md:border-r md:border-t-0 md:shadow-none"
-        :class="isListSheetExpanded ? 'translate-y-0' : 'translate-y-[calc(100%-56px)] md:translate-y-0'"
+        data-testid="explore-list-sheet"
+        :data-sheet-position="listSheetPosition"
+        class="fixed inset-x-0 bottom-[72px] z-40 flex max-h-[76vh] min-h-0 flex-col overflow-hidden rounded-t-2xl border-t border-slate-200 bg-white shadow-2xl shadow-slate-900/15 transition-transform duration-300 md:static md:order-1 md:max-h-none md:!transform-none md:rounded-none md:border-r md:border-t-0 md:shadow-none"
         :style="listSheetDragStyle"
       >
         <button
+          data-testid="list-sheet-handle"
           class="grid min-h-10 touch-none place-items-center border-b border-slate-100 bg-white md:hidden"
-          :aria-label="isListSheetExpanded ? '여행지 목록 접기' : '여행지 목록 펼치기'"
+          :aria-label="listSheetPosition === 'expanded' ? '여행지 목록 내리기' : '여행지 목록 올리기'"
           @click="handleListSheetHandleClick"
           @pointerdown="startListSheetDrag"
         >
@@ -555,12 +813,20 @@ onBeforeUnmount(() => {
           <article
             v-for="place in places"
             :key="place.id"
+            :data-testid="`place-list-item-${place.id}`"
             class="group cursor-pointer border-b border-slate-100 bg-white p-4 transition hover:bg-slate-50"
-            :class="selectedPlaceId === place.id ? 'bg-brand-50/70 ring-1 ring-inset ring-brand-200' : ''"
+            :class="selectedPlaceId === place.id ? 'bg-slate-50' : ''"
             @click="selectPlaceOnMap(place)"
           >
             <div class="relative aspect-[16/10] overflow-hidden rounded-lg bg-slate-100">
-              <SafeImage :src="place.thumbnailImage || place.image" :alt="place.title" class="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+              <SafeImage :src="placeImage(place)" :alt="place.title" class="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+              <div
+                v-if="!hasPlaceImage(place)"
+                :data-testid="`place-list-image-fallback-${place.id}`"
+                class="absolute inset-0 grid place-items-center bg-slate-950/45 px-5 text-center text-xs font-black text-white"
+              >
+                이미지 준비 중
+              </div>
             </div>
 
             <div class="mt-3 min-w-0">
@@ -602,8 +868,12 @@ onBeforeUnmount(() => {
       </aside>
 
         <div class="relative h-[calc(100vh-128px)] overflow-hidden bg-[#f5f1e8] sm:h-[calc(100vh-132px)] md:order-2 md:h-full">
-          <div class="absolute left-3 right-3 top-3 z-20 flex flex-col gap-2 md:left-4 md:right-auto md:max-w-[calc(100%-2rem)]">
-            <div class="flex max-w-full gap-2 overflow-x-auto pb-1">
+          <div class="absolute left-3 right-3 top-3 z-40 flex items-start gap-2 md:left-4 md:right-4">
+            <div
+              v-if="!selectedPlace"
+              data-testid="map-category-filters"
+              class="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1"
+            >
               <button
                 v-for="category in categories"
                 :key="category.value"
@@ -616,16 +886,16 @@ onBeforeUnmount(() => {
               </button>
             </div>
 
+            <button
+              v-if="focusedPlace"
+              data-testid="show-all-pins"
+              class="ml-auto inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-brand-200 bg-white/95 px-3.5 text-xs font-black text-brand-600 shadow-md shadow-indigo-100/70 backdrop-blur transition hover:border-brand-300 hover:bg-brand-50"
+              @click="showAllPlacesOnMap"
+            >
+              <MapPin :size="14" />
+              전체 핀 보기
+            </button>
           </div>
-
-          <button
-            v-if="focusedPlace"
-            class="absolute left-4 top-16 z-20 inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50/95 px-3.5 py-2 text-xs font-black text-brand-600 shadow-md shadow-indigo-100/70 backdrop-blur transition hover:border-brand-300 hover:bg-white"
-            @click="showAllPlacesOnMap"
-          >
-            <MapPin :size="14" />
-            전체 핀 보기
-          </button>
 
           <KakaoMap
             class="absolute inset-0"
@@ -636,50 +906,196 @@ onBeforeUnmount(() => {
             @marker-click="selectedPlaceId = Number($event.id)"
           />
 
-          <section
-            v-if="selectedPlace"
-            class="absolute left-4 right-4 top-28 z-10 overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-xl backdrop-blur sm:right-auto sm:w-[340px]"
-          >
-            <div class="relative aspect-[16/9] bg-slate-100">
-              <SafeImage :src="selectedPlace.thumbnailImage || selectedPlace.image" :alt="selectedPlace.title" class="h-full w-full object-cover" />
-              <button
-                class="absolute right-3 top-3 grid size-8 place-items-center rounded-full bg-white/95 text-slate-500 shadow-sm backdrop-blur transition hover:bg-white"
-                aria-label="선택 해제"
-                @click="selectedPlaceId = null"
+          <Teleport to="body" :disabled="isDesktopViewport">
+            <section
+              v-if="selectedPlace"
+              data-testid="place-detail-overlay"
+              data-mobile-portal="true"
+              :data-sheet-position="listSheetPosition"
+              :style="listSheetDragStyle"
+              class="fixed inset-x-0 bottom-[72px] z-[70] h-[76vh] overflow-y-auto rounded-t-2xl bg-white shadow-2xl md:absolute md:inset-auto md:bottom-4 md:left-4 md:top-4 md:h-auto md:!transform-none md:z-50 md:w-[min(420px,calc(100%-2rem))] md:rounded-2xl md:border md:border-slate-200"
+            >
+            <div class="relative aspect-[16/10] bg-slate-100">
+              <SafeImage :src="placeImage(selectedPlace, true)" :alt="selectedPlace.title" class="h-full w-full object-cover" />
+              <div
+                v-if="!hasPlaceImage(selectedPlace)"
+                data-testid="place-detail-image-fallback"
+                class="absolute inset-0 grid place-items-center bg-slate-950/50 px-8 text-center text-sm font-black text-white"
               >
-                <X :size="18" />
+                이미지 준비 중
+              </div>
+              <button
+                data-testid="close-place-detail"
+                class="absolute right-4 top-4 grid size-9 place-items-center rounded-full bg-white/95 text-slate-700 shadow-sm backdrop-blur transition hover:bg-white"
+                aria-label="상세 패널 닫기"
+                @click="closePlaceOverlay"
+              >
+                <X :size="19" />
               </button>
             </div>
-            <div class="p-4">
-              <div class="flex items-center gap-2">
-                <span class="rounded-md bg-brand-50 px-2 py-1 text-[11px] font-black text-brand-600">{{ selectedPlace.category }}</span>
-                <span v-if="Number(selectedPlace.reviewCount) > 0" class="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500">
-                  <Star :size="13" class="text-amber-400" fill="currentColor" />
-                  <span class="font-black text-slate-700">{{ selectedPlace.rating.toFixed(1) }}</span>
-                  <span>· 리뷰 {{ selectedPlace.reviewCount }}</span>
+
+            <div class="p-5">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="rounded-full bg-brand-100 px-3 py-1.5 text-xs font-black text-brand-600">{{ selectedPlace.category }}</span>
+                <span v-if="Number(selectedPlace.reviewCount) > 0" class="inline-flex items-center gap-1 text-xs font-bold text-slate-500">
+                  <Star :size="14" class="text-amber-400" fill="currentColor" />
+                  <span class="font-black text-slate-800">{{ selectedPlace.rating.toFixed(1) }}</span>
+                  <span>리뷰 {{ selectedPlace.reviewCount }}</span>
                 </span>
-                <span v-else class="text-[11px] font-bold text-slate-400">리뷰 없음</span>
+                <span v-else class="text-xs font-bold text-slate-400">리뷰 없음</span>
               </div>
-              <h3 class="mt-2 truncate text-lg font-black text-slate-950">{{ selectedPlace.title }}</h3>
-              <p class="mt-1 flex min-w-0 items-center gap-1.5 text-xs font-bold text-slate-500">
-                <MapPin :size="14" class="shrink-0 text-brand-500" />
-                <span class="truncate">{{ selectedPlace.location }}</span>
-              </p>
-              <p class="mt-2 line-clamp-3 text-sm font-semibold leading-6 text-slate-600">{{ selectedPlace.description }}</p>
-              <div class="mt-4 flex gap-2">
-                <button class="h-9 flex-1 rounded-lg bg-brand-500 text-xs font-black text-white transition hover:bg-brand-600" @click="emit('openPlace', selectedPlace)">
-                  상세 보기
-                </button>
+
+              <div class="mt-3 flex items-center justify-between gap-3">
+                <h2 class="min-w-0 flex-1 text-2xl font-black text-slate-950">{{ selectedPlace.title }}</h2>
                 <button
-                  :data-testid="`open-add-place-${selectedPlace.id}`"
-                  class="h-9 rounded-lg bg-brand-100 px-4 text-[11px] font-black text-brand-600 transition hover:bg-brand-200"
-                  @click="openAddModal(selectedPlace)"
+                  data-testid="place-detail-like"
+                  class="grid size-9 shrink-0 place-items-center rounded-full text-slate-300 transition hover:bg-red-50 hover:text-red-500"
+                  :class="likedIds.has(selectedPlace.id) ? 'text-red-500' : ''"
+                  aria-label="좋아요"
+                  @click="toggleLike(selectedPlace)"
                 >
-                  일정
+                  <Heart :size="22" :fill="likedIds.has(selectedPlace.id) ? 'currentColor' : 'none'" />
                 </button>
               </div>
+              <p class="mt-2 flex min-w-0 items-start gap-1.5 text-sm font-bold leading-5 text-slate-500">
+                <MapPin :size="16" class="mt-0.5 shrink-0 text-brand-500" />
+                <span>{{ selectedPlace.location }}</span>
+              </p>
+              <p class="mt-4 text-sm font-semibold leading-6 text-slate-600">{{ selectedPlace.description }}</p>
+
+              <div v-if="selectedPlace.tags.length" class="mt-4 flex flex-wrap gap-2">
+                <span v-for="tag in selectedPlace.tags" :key="tag" class="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-700">
+                  # {{ tag }}
+                </span>
+              </div>
+
+              <button
+                :data-testid="`open-add-place-${selectedPlace.id}`"
+                class="btn-primary mt-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg text-sm"
+                @click="openAddModal(selectedPlace)"
+              >
+                <CalendarPlus :size="17" />
+                내 여행 일정에 추가
+              </button>
+
+              <p v-if="detailMessage" class="mt-4 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-600">{{ detailMessage }}</p>
+
+              <section data-testid="place-weather" class="mt-5 border-t border-slate-100 pt-5">
+                <h3 class="text-base font-black text-slate-950">날씨</h3>
+                <p v-if="weatherLoading" class="mt-3 rounded-xl bg-slate-50 p-4 text-sm font-bold text-slate-500">
+                  날씨를 불러오는 중입니다.
+                </p>
+                <div v-else-if="weather?.available" class="mt-3 rounded-xl bg-brand-50 p-4">
+                  <div class="flex items-center gap-3">
+                    <span class="grid size-11 place-items-center rounded-xl bg-white text-brand-500 shadow-sm">
+                      <component :is="weatherIcon(weather.skyStatus, weather.precipitationType)" :size="22" />
+                    </span>
+                    <div class="min-w-0 flex-1">
+                      <p data-testid="today-weather-date" class="text-xs font-black text-brand-600">{{ todayWeatherDate }}</p>
+                      <p class="mt-0.5 font-black text-slate-900">{{ weatherLabel(weather.skyStatus, weather.precipitationType) }}</p>
+                      <p class="mt-1 text-xs font-bold text-slate-500">강수 {{ weather.precipitationProbability ?? '-' }}% · 습도 {{ weather.humidity ?? '-' }}%</p>
+                    </div>
+                    <strong class="text-xl font-black text-slate-950">{{ formatTemperature(weather.temperature) }}</strong>
+                  </div>
+                  <div v-if="futureWeatherForecasts.length" data-testid="future-weather-grid" class="mt-3 grid grid-cols-3 gap-2">
+                    <div
+                      v-for="forecast in futureWeatherForecasts"
+                      :key="forecast.forecastDate || forecast.dayLabel || ''"
+                      data-testid="future-weather-item"
+                      class="rounded-lg bg-white p-2 text-center"
+                    >
+                      <p class="truncate text-[11px] font-black text-slate-500">{{ forecast.dayLabel || forecast.forecastDate }}</p>
+                      <component :is="weatherIcon(forecast.skyStatus, forecast.precipitationType)" :size="17" class="mx-auto my-1 text-brand-500" />
+                      <p class="text-[10px] font-bold text-blue-500">최저 {{ formatForecastTemperature(forecast.minTemperature) }}</p>
+                      <p class="mt-0.5 text-[10px] font-black text-red-500">최고 {{ formatForecastTemperature(forecast.maxTemperature) }}</p>
+                    </div>
+                  </div>
+                </div>
+                <p v-else class="mt-3 rounded-xl bg-slate-50 p-4 text-sm font-bold text-slate-500">
+                  {{ weather?.message || '날씨 정보를 확인할 수 없습니다.' }}
+                </p>
+              </section>
+
+              <section data-testid="place-nearby-facilities" class="mt-5 border-t border-slate-100 pt-5">
+                <h3 class="text-base font-black text-slate-950">가까운 편의시설</h3>
+                <p v-if="facilitiesLoading" class="mt-3 rounded-xl bg-slate-50 p-4 text-sm font-bold text-slate-500">
+                  주변 편의시설을 확인하는 중입니다.
+                </p>
+                <div v-else class="mt-3 grid gap-2">
+                  <article v-for="item in nearbyFacilityItems" :key="item.type" class="flex items-center gap-3 rounded-xl bg-slate-50 p-3">
+                    <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-white text-brand-500">
+                      <component :is="item.icon" :size="17" />
+                    </span>
+                    <div class="min-w-0 flex-1">
+                      <p class="text-xs font-black text-slate-400">{{ item.label }}</p>
+                      <p class="mt-0.5 truncate text-sm font-black text-slate-800">{{ item.nearest?.facilityName || '주변에 없음' }}</p>
+                    </div>
+                    <span v-if="item.nearest" class="text-xs font-black text-brand-600">{{ formatDistance(item.nearest.distanceM) }}</span>
+                  </article>
+                </div>
+              </section>
+
+              <section data-testid="place-reviews" class="mt-5 border-t border-slate-100 pt-5">
+                <div class="flex items-center justify-between gap-3">
+                  <h3 class="text-base font-black text-slate-950">리뷰</h3>
+                  <button
+                    data-testid="open-review-editor"
+                    class="h-9 rounded-lg bg-brand-50 px-3 text-xs font-black text-brand-600 transition hover:bg-brand-100"
+                    @click="showReviewModal = true"
+                  >
+                    {{ myReview ? '내 리뷰 수정' : '리뷰 작성' }}
+                  </button>
+                </div>
+                <div class="mt-3 space-y-2">
+                  <p v-if="reviewsLoading" class="py-4 text-center text-sm font-bold text-slate-400">리뷰를 불러오는 중입니다.</p>
+                  <p v-else-if="!reviews.length" class="py-4 text-center text-sm font-bold text-slate-400">첫 리뷰를 남겨보세요.</p>
+                  <article
+                    v-for="item in paginatedReviews"
+                    :key="item.reviewId"
+                    :data-testid="`place-review-card-${item.reviewId}`"
+                    class="rounded-lg border-b border-slate-100 bg-white px-1 py-3 last:border-b-0"
+                  >
+                    <div class="flex items-center justify-between gap-3">
+                      <div class="flex min-w-0 items-center gap-2">
+                        <strong class="truncate text-sm font-black text-slate-900">{{ item.authorNickname }}</strong>
+                        <div class="flex shrink-0 items-center gap-0.5 text-amber-400" :aria-label="`${item.rating}점`">
+                          <Star
+                            v-for="score in 5"
+                            :key="score"
+                            :size="13"
+                            :fill="score <= item.rating ? 'currentColor' : 'none'"
+                            :class="score <= item.rating ? '' : 'text-slate-200'"
+                          />
+                        </div>
+                      </div>
+                      <span v-if="item.mine" class="rounded-full bg-brand-50 px-2 py-1 text-[10px] font-black text-brand-600">내 리뷰</span>
+                    </div>
+                    <p v-if="item.content" class="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-600">{{ item.content }}</p>
+                  </article>
+                  <div v-if="reviewPageCount > 1" class="flex items-center justify-between pt-1">
+                    <button
+                      data-testid="previous-review-page"
+                      class="h-8 rounded-lg bg-slate-100 px-3 text-xs font-black text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+                      :disabled="reviewPage === 0"
+                      @click="reviewPage -= 1"
+                    >
+                      이전
+                    </button>
+                    <span class="text-xs font-black text-slate-400">{{ reviewPage + 1 }} / {{ reviewPageCount }}</span>
+                    <button
+                      data-testid="next-review-page"
+                      class="h-8 rounded-lg bg-slate-100 px-3 text-xs font-black text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+                      :disabled="reviewPage >= reviewPageCount - 1"
+                      @click="reviewPage += 1"
+                    >
+                      다음
+                    </button>
+                  </div>
+                </div>
+              </section>
             </div>
-          </section>
+            </section>
+          </Teleport>
         </div>
       </div>
 
@@ -745,6 +1161,42 @@ onBeforeUnmount(() => {
           <button data-testid="confirm-add-place" class="btn-primary mt-5 h-10 w-full rounded-lg text-sm disabled:cursor-not-allowed disabled:opacity-50" :disabled="isAddingToTrip || !upcomingTrips.length" @click="addToTrip()">
             {{ isAddingToTrip ? '추가 중...' : '선택한 일정에 추가' }}
           </button>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="modal-fade">
+      <div v-if="showReviewModal && selectedPlace" class="fixed inset-0 z-[90] grid place-items-center bg-slate-900/55 p-4" @click.self="showReviewModal = false">
+        <section data-testid="review-editor-modal" class="modal-panel w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h2 class="text-xl font-black text-slate-950">{{ myReview ? '내 리뷰 수정' : '리뷰 작성' }}</h2>
+              <p class="mt-1 text-sm font-bold text-slate-500">{{ selectedPlace.title }}</p>
+            </div>
+            <button class="text-slate-500" aria-label="리뷰 모달 닫기" @click="showReviewModal = false">
+              <X :size="22" />
+            </button>
+          </div>
+          <div class="mt-5 flex items-center justify-center gap-1">
+            <button
+              v-for="score in 5"
+              :key="score"
+              type="button"
+              class="text-slate-300 transition hover:scale-110 hover:text-amber-400"
+              :class="score <= reviewRating ? 'text-amber-400' : ''"
+              :aria-label="`${score}점 선택`"
+              @click="reviewRating = score"
+            >
+              <Star :size="30" :fill="score <= reviewRating ? 'currentColor' : 'none'" />
+            </button>
+          </div>
+          <textarea v-model="reviewText" rows="5" maxlength="1000" class="brand-input mt-5 w-full resize-none rounded-xl px-4 py-3 text-sm outline-none" placeholder="방문 후기를 남겨보세요." />
+          <div class="mt-4 flex gap-2">
+            <button v-if="myReview" class="h-11 rounded-lg bg-red-50 px-4 text-sm font-black text-red-500" :disabled="reviewSaving" @click="deletePlaceReview">삭제</button>
+            <button class="btn-primary h-11 flex-1 rounded-lg text-sm" :disabled="reviewSaving" @click="savePlaceReview">
+              {{ reviewSaving ? '저장 중...' : myReview ? '수정 완료' : '리뷰 등록' }}
+            </button>
+          </div>
         </section>
       </div>
     </Transition>

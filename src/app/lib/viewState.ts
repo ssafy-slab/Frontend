@@ -72,7 +72,8 @@ export function loadViewState(storage: Pick<Storage, 'getItem'>, pathname = '/',
 
   const pathView = viewFromPath(pathname)
   const hashView = viewFromHash(hash)
-  const activeView = pathView ?? hashView ?? (isViewName(saved.activeView) ? saved.activeView : undefined)
+  const requestedView = pathView ?? hashView ?? (isViewName(saved.activeView) ? saved.activeView : undefined)
+  const activeView = requestedView === 'place-detail' ? 'explore' : requestedView
   return { ...saved, activeView }
 }
 
