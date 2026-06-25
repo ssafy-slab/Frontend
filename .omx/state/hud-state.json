@@ -1,6 +1,0 @@
-{
-  "last_turn_at": "2026-06-24T12:40:45.466Z",
-  "turn_count": 24,
-  "last_progress_at": "2026-06-24T12:40:45.466Z",
-  "last_agent_output": "수정했습니다.\n\n- 앱 시작 시 Refresh Token 쿠키로 세션 복구\n- 401 발생 시 토큰 재발급 후 요청 1회 재시도\n- 동시 refresh 요청 하나로 통합\n- 로그아"
-}
