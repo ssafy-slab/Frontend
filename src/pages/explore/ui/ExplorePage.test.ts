@@ -110,6 +110,28 @@ describe('ExplorePage review sorting', () => {
     )
   })
 
+  it('runs an initial keyword search received from the home page', async () => {
+    const wrapper = mount(ExplorePage, {
+      props: {
+        accessToken: '',
+        trips: [],
+        initialKeyword: '해수욕장',
+      },
+      global: { stubs: { KakaoMap: true, SafeImage: true, Teleport: true } },
+    })
+    await flushPromises()
+
+    expect(fetchPlaces).toHaveBeenCalledWith(
+      expect.objectContaining({
+        keyword: '해수욕장',
+        searchMode: 'tokenized',
+        page: 0,
+      }),
+      undefined,
+    )
+    expect(wrapper.emitted('consumedInitialKeyword')).toBeTruthy()
+  })
+
   it('uses a close default map zoom on desktop too', async () => {
     vi.stubGlobal('innerWidth', 1280)
     const wrapper = mount(ExplorePage, {
@@ -409,6 +431,50 @@ describe('ExplorePage review sorting', () => {
     })
     await flushPromises()
     expect(wrapper.get('[data-testid="place-weather"]').text()).toContain('24.0°C')
+  })
+
+  it('retries only the weather request after a weather failure', async () => {
+    fetchPlaces.mockResolvedValue({
+      content: [{
+        id: 1, title: '날씨 재시도 장소', location: '서울', category: '관광지', rawCategory: '관광지',
+        description: '날씨 테스트', image: '/image.jpg', thumbnailImage: '/image.jpg', detailImage: '/image.jpg',
+        rating: 4.5, reviewCount: '1', tags: [], marker: { top: '50%', left: '50%' },
+        coordinates: { lat: 37.5, lng: 127 }, address: '서울', regionId: 1,
+        regionName: '서울', regionFullName: '서울',
+      }],
+      totalElements: 1, page: 0, size: 20, hasNext: false,
+    })
+    fetchPlaceWeather
+      .mockRejectedValueOnce(new Error('weather failed'))
+      .mockResolvedValueOnce({
+        available: true, message: null, temperature: 21, feelsLikeTemperature: 20,
+        precipitationProbability: 10, humidity: 50, windSpeed: 1, precipitationType: 'NONE',
+        skyStatus: 'CLEAR', precipitationOneHour: null, forecastAt: null, updatedAt: null,
+        forecasts: [], dailyForecasts: [],
+      })
+
+    const wrapper = mount(ExplorePage, {
+      props: { accessToken: '', trips: [] },
+      global: { stubs: { KakaoMap: true, SafeImage: true, Teleport: true } },
+    })
+    await flushPromises()
+    await wrapper.get('[data-testid="place-list-item-1"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="place-weather"]').text()).toContain('날씨 정보를 불러오지 못했습니다')
+    expect(wrapper.get('[data-testid="retry-weather"]').text()).toContain('다시 시도')
+    expect(fetchPlaceWeather).toHaveBeenCalledTimes(1)
+    expect(fetchPlaceNearbyFacilities).toHaveBeenCalledTimes(1)
+    expect(fetchPlaceReviews).toHaveBeenCalledTimes(1)
+
+    await wrapper.get('[data-testid="retry-weather"]').trigger('click')
+    await flushPromises()
+
+    expect(fetchPlaceWeather).toHaveBeenCalledTimes(2)
+    expect(fetchPlaceNearbyFacilities).toHaveBeenCalledTimes(1)
+    expect(fetchPlaceReviews).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-testid="place-weather"]').text()).toContain('21.0°C')
+    expect(wrapper.find('[data-testid="retry-weather"]').exists()).toBe(false)
   })
 
   it('does not draw an outline around the selected place card', async () => {

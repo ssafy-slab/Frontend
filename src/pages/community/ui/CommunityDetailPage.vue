@@ -51,6 +51,7 @@ const editCommentDraft = ref('')
 const errorMessage = ref('')
 
 const categoryLabel = computed(() => post.value ? categoryLabels[post.value.category] ?? post.value.category : '')
+const isMockPost = computed(() => Boolean(findMockCommunityPost(post.value?.postId)))
 const postImageUrl = computed(() => post.value?.imageUrl ? resolveCommunityImageUrl(post.value.imageUrl) : '')
 const postContentCells = computed(() => {
   if (!post.value) return []
@@ -284,7 +285,7 @@ onMounted(loadPost)
     <article v-else-if="post" class="brand-card rounded-xl p-5 sm:p-8">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <span class="inline-flex w-fit rounded-full bg-brand-500 px-3 py-1.5 text-xs font-black text-white">{{ categoryLabel }}</span>
-        <div v-if="post.mine" class="flex gap-2">
+        <div v-if="post.mine && !isMockPost" class="flex gap-2">
           <button class="inline-flex h-9 items-center gap-2 rounded-lg bg-slate-100 px-3 text-xs font-black text-slate-700 hover:bg-slate-200" @click="emit('edit', post.postId)">
             <Edit3 :size="14" />
             수정
@@ -341,8 +342,9 @@ onMounted(loadPost)
         </div>
       </div>
 
-      <div class="mt-8 flex flex-wrap justify-center gap-3">
+      <div v-if="!isMockPost" class="mt-8 flex flex-wrap justify-center gap-3">
         <button
+          data-testid="post-like-button"
           class="like-button inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-black transition"
           :class="post.likedByMe ? 'liked bg-red-500 text-white' : 'bg-brand-500 text-white hover:bg-brand-600'"
           @click="toggleLike"
@@ -357,7 +359,7 @@ onMounted(loadPost)
           <MessageCircle :size="20" class="text-brand-500" />
           댓글 <span class="text-brand-500">{{ comments.length }}</span>
         </h2>
-        <div class="mb-5 flex items-center gap-3">
+        <div v-if="!isMockPost" data-testid="comment-composer" class="mb-5 flex items-center gap-3">
           <span class="grid size-9 place-items-center rounded-full bg-slate-300 text-sm font-black text-slate-600">Me</span>
           <input v-model="commentDraft" class="brand-input h-11 min-w-0 flex-1 rounded-lg px-4 text-sm outline-none" placeholder="댓글을 입력하세요" @keyup.enter="submitComment" />
           <button class="btn-primary inline-flex h-11 items-center gap-2 rounded-lg px-5 text-sm disabled:cursor-not-allowed disabled:opacity-60" :disabled="submittingComment" @click="submitComment">
@@ -413,7 +415,7 @@ onMounted(loadPost)
                   <strong v-if="comment.replyToNickname" class="mr-1 font-black text-brand-500">@{{ comment.replyToNickname }}</strong>
                   {{ comment.content }}
                 </p>
-                <div v-if="!comment.deleted" class="mt-3 flex flex-wrap gap-3 text-xs font-black">
+                <div v-if="!comment.deleted && !isMockPost" class="mt-3 flex flex-wrap gap-3 text-xs font-black">
                   <button
                     :data-testid="`reply-comment-${comment.commentId}`"
                     class="text-brand-500 hover:text-brand-600"

@@ -44,15 +44,19 @@ Clicking a keyword emits a dedicated search event. The app stores the requested 
 
 The large image carousel remains on the right side of the home hero.
 
-It uses fixed, polished tourist-attraction slides chosen for demo stability. Each slide includes:
+It uses five fixed, well-known attractions chosen from the project's real place data:
 
-- Attraction name.
-- Short Korean caption.
-- High-quality fixed image URL.
-- Search keyword.
-- Optional preferred real place ID.
+- 경복궁 (`placeId=8`)
+- 해운대해수욕장 (`placeId=8802`)
+- 부산 감천문화마을 (`placeId=9127`)
+- 비자림 (`placeId=38974`)
+- 남이섬 (`placeId=41004`)
 
-The carousel attempts to resolve preferred IDs through the existing place API. When a preferred ID cannot be loaded, clicking the slide navigates to Explore and runs its search keyword. This keeps the visual content fixed while maintaining a truthful, functional path into real data.
+Titles and short Korean captions are fixed for demo stability. Each slide loads its real place record through the existing place-detail API and displays the original `detailImage`, not the low-resolution thumbnail. Clicking a slide opens that real place in Explore. If an individual request fails or lacks a real image, the slide uses its fixed fallback image and keyword-search navigation.
+
+### Random Hot Places
+
+The place API accepts `sort=random`. Backend SQL uses random ordering only for this explicit sort value; existing Explore ordering remains unchanged. Home requests tourist attractions with `sort=random`, filters out records without real images, and displays up to ten cards. API failure or insufficient photographed results are filled from ten fallback attractions.
 
 ### Community Popular Posts
 
@@ -165,3 +169,15 @@ Backend verification covers:
 - Two newly written popular-post mocks open complete, read-only mock detail pages.
 - API failure still leaves the home page visually complete and navigable.
 - Frontend tests, type-check/build, and relevant backend verification pass.
+
+## Explore Weather Retry Addendum
+
+When weather loading fails in the Explore place-detail overlay, the weather section does not expose the raw request error as its final state. It shows a concise unavailable message and a `다시 시도` button.
+
+Retry behavior:
+
+- Retries only `fetchPlaceWeather` for the currently selected place.
+- Does not reload reviews, nearby facilities, filters, or the place list.
+- Disables the retry control and shows the existing loading state while retrying.
+- Clears a previous weather failure when another place is selected.
+- Preserves the API-provided unavailable message when the request succeeds with `available=false`, while still offering retry.

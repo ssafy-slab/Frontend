@@ -41,6 +41,7 @@ const props = defineProps<{
   accessToken: string
   trips: Trip[]
   targetPlace?: Place | null
+  initialKeyword?: string
 }>()
 
 const pageSize = 20
@@ -71,6 +72,7 @@ const myReview = ref<PlaceReview | null>(null)
 const reviewText = ref('')
 const reviewRating = ref(0)
 const weatherLoading = ref(false)
+const weatherFailed = ref(false)
 const facilitiesLoading = ref(false)
 const reviewsLoading = ref(false)
 const reviewSaving = ref(false)
@@ -205,7 +207,18 @@ const emit = defineEmits<{
   openPlace: [place: Place]
   closePlace: []
   saved: [message: string]
+  consumedInitialKeyword: []
 }>()
+
+function consumeInitialKeyword() {
+  const nextKeyword = props.initialKeyword?.trim()
+  if (!nextKeyword) return false
+  keywordInput.value = nextKeyword
+  keyword.value = nextKeyword
+  selectedPlaceId.value = null
+  emit('consumedInitialKeyword')
+  return true
+}
 
 async function loadFilters() {
   const filters = await fetchPlaceFilters()
@@ -374,13 +387,36 @@ function applyReviewSummary(summary: PlaceReviewSummary) {
 }
 
 let detailRequestId = 0
+async function loadWeather(placeId: number, requestId = detailRequestId) {
+  weatherLoading.value = true
+  weatherFailed.value = false
+  weather.value = null
+
+  try {
+    const result = await fetchPlaceWeather(placeId)
+    if (requestId !== detailRequestId) return
+    weather.value = result
+    weatherFailed.value = !result.available
+  } catch {
+    if (requestId !== detailRequestId) return
+    weatherFailed.value = true
+  } finally {
+    if (requestId === detailRequestId) weatherLoading.value = false
+  }
+}
+
+function retryWeather() {
+  if (!selectedPlace.value || weatherLoading.value) return
+  void loadWeather(selectedPlace.value.id)
+}
+
 async function loadPlaceDetails(placeId: number) {
   const requestId = ++detailRequestId
-  weatherLoading.value = true
   facilitiesLoading.value = true
   reviewsLoading.value = true
   detailMessage.value = ''
   weather.value = null
+  weatherFailed.value = false
   nearbyFacilities.value = null
   reviews.value = []
   reviewPage.value = 0
@@ -388,14 +424,7 @@ async function loadPlaceDetails(placeId: number) {
   reviewText.value = ''
   reviewRating.value = 0
 
-  void fetchPlaceWeather(placeId)
-    .then((result) => {
-      if (requestId === detailRequestId) weather.value = result
-    })
-    .catch(() => undefined)
-    .finally(() => {
-      if (requestId === detailRequestId) weatherLoading.value = false
-    })
+  void loadWeather(placeId, requestId)
 
   void fetchPlaceNearbyFacilities(placeId, { limit: 10, types: nearbyFacilityTypes.map((item) => item.type) })
     .then((result) => {
@@ -684,8 +713,17 @@ watch(
   },
 )
 
+watch(
+  () => props.initialKeyword,
+  (nextKeyword, previousKeyword) => {
+    if (!nextKeyword?.trim() || nextKeyword === previousKeyword) return
+    if (consumeInitialKeyword()) void loadPlaces(0)
+  },
+)
+
 onMounted(async () => {
   window.addEventListener('resize', updateViewportMode)
+  consumeInitialKeyword()
   try {
     await loadFilters()
   } catch {
@@ -1032,8 +1070,21 @@ onBeforeUnmount(() => {
                     </div>
                   </div>
                 </div>
+                <div v-else-if="weatherFailed" class="mt-3 rounded-xl bg-slate-50 p-4 text-center">
+                  <p class="text-sm font-bold text-slate-500">
+                    {{ weather?.message || '날씨 정보를 불러오지 못했습니다.' }}
+                  </p>
+                  <button
+                    data-testid="retry-weather"
+                    class="mt-3 rounded-lg bg-brand-500 px-4 py-2 text-sm font-black text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    :disabled="weatherLoading"
+                    @click="retryWeather"
+                  >
+                    다시 시도
+                  </button>
+                </div>
                 <p v-else class="mt-3 rounded-xl bg-slate-50 p-4 text-sm font-bold text-slate-500">
-                  {{ weather?.message || '날씨 정보를 확인할 수 없습니다.' }}
+                  날씨 정보를 확인할 수 없습니다.
                 </p>
               </section>
 

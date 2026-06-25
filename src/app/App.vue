@@ -23,6 +23,7 @@ import { fetchTrips } from '@/entities/travel/api/tripApi'
 import { loadViewState, replaceViewPath, saveViewState } from '@/app/lib/viewState'
 import type { ViewName } from '@/app/lib/viewState'
 import { resolveAuthenticatedView } from '@/app/lib/authRedirect'
+import { createHomeSearchState } from '@/app/lib/homeNavigation'
 
 const savedViewState = loadViewState(window.sessionStorage, window.location.pathname, window.location.hash)
 const authStore = useAuthStore()
@@ -34,6 +35,7 @@ const selectedTrip = ref<Trip | null>(savedViewState.selectedTrip ?? null)
 const appTrips = ref<Trip[]>([])
 const selectedCommunityPostId = ref<number | null>(savedViewState.selectedCommunityPostId ?? null)
 const editingCommunityPostId = ref<number | null>(savedViewState.editingCommunityPostId ?? null)
+const requestedExploreKeyword = ref('')
 const toastMessage = ref('')
 const authMode = computed(() => (activeView.value === 'signup' ? 'signup' : 'login'))
 
@@ -73,7 +75,15 @@ async function loadAppTrips() {
 }
 
 function openPlace(place: Place) {
+  requestedExploreKeyword.value = ''
   selectedPlace.value = place
+  changeView('explore')
+}
+
+function openExploreSearch(keyword: string) {
+  const next = createHomeSearchState(keyword)
+  selectedPlace.value = next.selectedPlace
+  requestedExploreKeyword.value = next.exploreKeyword
   changeView('explore')
 }
 
@@ -170,16 +180,26 @@ watch(activeView, (view) => {
 
   <main class="page-shell" :class="activeView === 'explore' ? 'pb-0' : 'pb-24 md:pb-0'">
     <Transition name="page-fade" mode="out-in">
-      <HomePage v-if="activeView === 'home'" key="home" @change="changeView" @open-place="openPlace" />
+      <HomePage
+        v-if="activeView === 'home'"
+        key="home"
+        :access-token="authStore.accessToken"
+        @change="changeView"
+        @open-place="openPlace"
+        @search-place="openExploreSearch"
+        @open-community-post="openCommunityPost"
+      />
       <ExplorePage
         v-else-if="activeView === 'explore'"
         key="explore"
         :access-token="authStore.accessToken"
         :trips="appTrips"
         :target-place="selectedPlace"
+        :initial-keyword="requestedExploreKeyword"
         @open-place="openPlace"
         @close-place="selectedPlace = null"
         @saved="showToast"
+        @consumed-initial-keyword="requestedExploreKeyword = ''"
       />
       <SchedulePage v-else-if="activeView === 'schedule'" key="schedule" :current-user="currentUser" :access-token="authStore.accessToken" @open-trip="openTrip" @saved="showToast" />
       <ScheduleDetailPage v-else-if="activeView === 'schedule-detail'" key="schedule-detail" :trip="selectedTrip" :access-token="authStore.accessToken" :current-user="currentUser" @change="changeView" @saved="showToast" @open-place="openPlaceById" />

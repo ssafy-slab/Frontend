@@ -130,6 +130,10 @@ button {
   transition: opacity 180ms ease;
 }
 
+.modal-fade-leave-active {
+  pointer-events: none;
+}
+
 .modal-fade-enter-from,
 .modal-fade-leave-to {
   opacity: 0;

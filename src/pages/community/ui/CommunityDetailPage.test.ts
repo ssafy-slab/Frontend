@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import CommunityDetailPage from './CommunityDetailPage.vue'
 import type { CommunityComment } from '@/entities/community/api/communityApi'
+import { mockCommunityPosts } from '@/entities/community/model/mockCommunity'
 
 const {
   createCommunityComment,
@@ -94,6 +95,22 @@ describe('CommunityDetailPage comments', () => {
     createCommunityComment.mockResolvedValue([])
     updateCommunityComment.mockResolvedValue([])
     deleteCommunityComment.mockResolvedValue(undefined)
+  })
+
+  it('renders mock details locally as read-only content', async () => {
+    const mockPost = mockCommunityPosts[0]!
+    const wrapper = mount(CommunityDetailPage, {
+      props: { postId: mockPost.postId, accessToken: 'token' },
+      global: { stubs: { Transition: false } },
+    })
+    await flushPromises()
+
+    expect(fetchCommunityPost).not.toHaveBeenCalled()
+    expect(fetchCommunityComments).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain(mockPost.title)
+    expect(wrapper.find('[data-testid="post-like-button"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="comment-composer"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid^="reply-comment-"]').exists()).toBe(false)
   })
 
   it('shows edit and delete only for my active comment', async () => {

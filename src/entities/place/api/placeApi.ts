@@ -27,7 +27,7 @@ export type PlaceSearchParams = {
   regionId?: number
   keyword?: string
   searchMode?: 'tokenized'
-  sort?: 'recommended' | 'reviewCount' | 'rating'
+  sort?: 'recommended' | 'reviewCount' | 'rating' | 'random'
   page?: number
   size?: number
 }
